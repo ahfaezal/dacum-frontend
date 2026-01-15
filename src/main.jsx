@@ -9,7 +9,7 @@ import { createRoot } from "react-dom/client";
  */
 const API_BASE =
   (import.meta?.env?.VITE_API_BASE && String(import.meta.env.VITE_API_BASE)) ||
-  "https://dacum-backend.onrenderer.com";
+  "https://dacum-backend.onrender.com";
 
 /**
  * Util: format masa ringkas
