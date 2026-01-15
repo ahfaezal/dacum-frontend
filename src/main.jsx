@@ -183,6 +183,7 @@ function PanelPage() {
       <div style={styles.smallLinks}>
         <div style={{ opacity: 0.75, marginBottom: 8 }}>Link berkaitan:</div>
         <code style={styles.codeBlock}>/board</code> untuk paparan fasilitator (anonim)
+        <code style={styles.codeBlock}>/cluster</code> untuk semakan clustering (fasa seterusnya)
       </div>
     </div>
   );
@@ -403,6 +404,85 @@ function BoardPage() {
     </div>
   );
 }
+/**
+ * CLUSTER VIEW (FASA SETERUSNYA) — Klustering Aktiviti → CU
+ * (Buat masa ini: UI placeholder + tarik data ikut session untuk rujukan)
+ */
+function ClusterPage() {
+  const [sessionId, setSessionId] = useState("dacum-demo");
+  const { cards, status, error } = useCards(sessionId);
+
+  const sorted = useMemo(() => sortByTimeAsc(cards), [cards]);
+
+  return (
+    <div style={styles.page}>
+      <div style={styles.headerRow}>
+        <div>
+          <h1 style={styles.title}>Clustering CU</h1>
+          <div style={styles.subTitle}>
+            Status: <b>{status}</b> | Session: <b>{sessionId}</b>
+          </div>
+          {error ? <div style={styles.error}>⚠ {error}</div> : null}
+        </div>
+
+        <div style={styles.sessionBox}>
+          <div style={{ fontSize: 12, fontWeight: 800, marginBottom: 6 }}>
+            Kawalan
+          </div>
+
+          <label style={{ ...styles.label, marginTop: 0 }}>Tukar Session</label>
+          <input
+            style={{ ...styles.input, marginTop: 6 }}
+            value={sessionId}
+            onChange={(e) => setSessionId(e.target.value)}
+            placeholder="dacum-demo"
+          />
+
+          <div style={styles.tip}>
+            Fasa ini akan membentuk CU (grouping) daripada aktiviti mentah.
+            Buat masa ini, kita paparkan senarai aktiviti sebagai rujukan.
+          </div>
+        </div>
+      </div>
+
+      <div style={styles.card}>
+        {sorted.length === 0 ? (
+          <div style={styles.empty}>
+            Tiada data untuk session ini. Sila masukkan aktiviti di <b>/panel</b>.
+          </div>
+        ) : (
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 900 }}>
+              <thead>
+                <tr>
+                  <th style={{ border: "1px solid #ddd", padding: 8, textAlign: "left" }}>Masa</th>
+                  <th style={{ border: "1px solid #ddd", padding: 8, textAlign: "left" }}>Aktiviti (Mentah)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sorted.map((c) => (
+                  <tr key={c.id}>
+                    <td style={{ border: "1px solid #ddd", padding: 8, width: 140 }}>
+                      {formatTime(c.time)}
+                    </td>
+                    <td style={{ border: "1px solid #ddd", padding: 8 }}>
+                      {c.activity}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            <div style={styles.hint}>
+              Nota: Seterusnya kita tambah UI “drag & drop” / “tagging” untuk group aktiviti → CU,
+              kemudian AI assist untuk cadang grouping.
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 /**
  * HOME: redirect
@@ -438,9 +518,10 @@ function App() {
       {clean === "/" ? <Home setPath={setPath} /> : null}
       {clean === "/panel" ? <PanelPage /> : null}
       {clean === "/board" ? <BoardPage /> : null}
+      {clean === "/cluster" ? <ClusterPage /> : null}
 
       {/* Jika path lain */}
-      {clean !== "/" && clean !== "/panel" && clean !== "/board" ? (
+      {clean !== "/" && clean !== "/panel" && clean !== "/board" && clean !== "/cluster" ? (
         <div style={styles.page}>
           <div style={styles.card}>
             <h2 style={{ marginTop: 0 }}>Page tidak ditemui</h2>
@@ -450,6 +531,9 @@ function App() {
               </button>
               <button style={styles.button} onClick={() => navigate("/board", setPath)}>
                 Pergi ke /board
+              </button>
+              <button style={styles.button} onClick={() => navigate("/cluster", setPath)}>
+                Pergi ke /cluster
               </button>
             </div>
           </div>
