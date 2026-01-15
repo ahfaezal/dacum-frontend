@@ -312,7 +312,7 @@ function BoardPage() {
 
         <div style={styles.sessionBox}>
           <div style={{ fontSize: 12, fontWeight: 800, marginBottom: 6 }}>
-            PFH Resources Digital
+            PFH DIGITAL BOARD
           </div>
 
           <label style={{ ...styles.label, marginTop: 0 }}>TAJUK NOSS</label>
