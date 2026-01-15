@@ -408,81 +408,469 @@ function BoardPage() {
  * CLUSTER VIEW (FASA SETERUSNYA) — Klustering Aktiviti → CU
  * (Buat masa ini: UI placeholder + tarik data ikut session untuk rujukan)
  */
+/**
+ * CLUSTER VIEW (MVP) — Klustering Aktiviti → CU (Manual by Fasilitator)
+ * Features:
+ * - Create/Rename/Delete CU
+ * - Assign/Unassign card to CU (dropdown)
+ * - Search + Filter (All/Unassigned/Assigned)
+ * - Autosave localStorage by session
+ * - Export JSON + Copy clipboard
+ */
 function ClusterPage() {
   const [sessionId, setSessionId] = useState("dacum-demo");
   const { cards, status, error } = useCards(sessionId);
 
-  const sorted = useMemo(() => sortByTimeAsc(cards), [cards]);
+  // UI state
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState("all"); // all | unassigned | assigned
+  const [selectedCardId, setSelectedCardId] = useState(null);
+
+  // Cluster state
+  const [cus, setCus] = useState([]); // [{id,title,notes}]
+  const [assignments, setAssignments] = useState({}); // { [cardId]: cuId }
+  const [msg, setMsg] = useState("");
+  const [err, setErr] = useState("");
+
+  // ---- localStorage key by session ----
+  const storageKey = useMemo(() => {
+    const sid = (sessionId || "").trim() || "dacum-demo";
+    return `dacum_cluster_${sid}`;
+  }, [sessionId]);
+
+  // ---- load saved cluster when session changes ----
+  useEffect(() => {
+    setErr("");
+    setMsg("");
+    setSelectedCardId(null);
+
+    try {
+      const raw = localStorage.getItem(storageKey);
+      if (!raw) {
+        setCus([]);
+        setAssignments({});
+        return;
+      }
+      const parsed = JSON.parse(raw);
+      setCus(Array.isArray(parsed?.cus) ? parsed.cus : []);
+      setAssignments(parsed?.assignments && typeof parsed.assignments === "object" ? parsed.assignments : {});
+    } catch {
+      setCus([]);
+      setAssignments({});
+    }
+  }, [storageKey]);
+
+  // ---- autosave ----
+  useEffect(() => {
+    try {
+      localStorage.setItem(storageKey, JSON.stringify({ cus, assignments }));
+    } catch {
+      // ignore quota errors
+    }
+  }, [storageKey, cus, assignments]);
+
+  // ---- helpers ----
+  const sortedCards = useMemo(() => sortByTimeAsc(cards), [cards]);
+
+  const assignedCount = useMemo(() => {
+    let c = 0;
+    for (const card of sortedCards) if (assignments[card.id]) c++;
+    return c;
+  }, [sortedCards, assignments]);
+
+  const unassignedCount = useMemo(() => sortedCards.length - assignedCount, [sortedCards.length, assignedCount]);
+
+  const filteredCards = useMemo(() => {
+    const q = (query || "").trim().toLowerCase();
+
+    return sortedCards.filter((c) => {
+      const isAssigned = !!assignments[c.id];
+      if (filter === "unassigned" && isAssigned) return false;
+      if (filter === "assigned" && !isAssigned) return false;
+
+      if (!q) return true;
+      const text = `${c.activity || ""}`.toLowerCase();
+      return text.includes(q);
+    });
+  }, [sortedCards, assignments, query, filter]);
+
+  const cuById = useMemo(() => {
+    const map = {};
+    for (const cu of cus) map[cu.id] = cu;
+    return map;
+  }, [cus]);
+
+  const countsByCu = useMemo(() => {
+    const map = {};
+    for (const cu of cus) map[cu.id] = 0;
+    for (const card of sortedCards) {
+      const cuId = assignments[card.id];
+      if (cuId && map[cuId] !== undefined) map[cuId] += 1;
+    }
+    return map;
+  }, [cus, sortedCards, assignments]);
+
+  const selectedCard = useMemo(() => {
+    if (!selectedCardId) return null;
+    return sortedCards.find((c) => c.id === selectedCardId) || null;
+  }, [sortedCards, selectedCardId]);
+
+  function toast(text) {
+    setMsg(text);
+    setTimeout(() => setMsg(""), 1500);
+  }
+
+  function makeId(prefix) {
+    return `${prefix}-${Math.random().toString(16).slice(2)}-${Date.now()}`;
+  }
+
+  function createCU() {
+    setErr("");
+    const id = makeId("cu");
+    const next = { id, title: `CU ${cus.length + 1}`, notes: "" };
+    setCus((prev) => [...prev, next]);
+    toast("✅ CU baru dicipta.");
+  }
+
+  function renameCU(cuId, title) {
+    setCus((prev) =>
+      prev.map((c) => (c.id === cuId ? { ...c, title: title } : c))
+    );
+  }
+
+  function deleteCU(cuId) {
+    // remove CU
+    setCus((prev) => prev.filter((c) => c.id !== cuId));
+    // unassign all cards assigned to this CU
+    setAssignments((prev) => {
+      const copy = { ...prev };
+      Object.keys(copy).forEach((cardId) => {
+        if (copy[cardId] === cuId) delete copy[cardId];
+      });
+      return copy;
+    });
+    toast("🗑️ CU dibuang (aktiviti kembali Unassigned).");
+  }
+
+  function assignCard(cardId, cuIdOrEmpty) {
+    setAssignments((prev) => {
+      const copy = { ...prev };
+      if (!cuIdOrEmpty) delete copy[cardId];
+      else copy[cardId] = cuIdOrEmpty;
+      return copy;
+    });
+  }
+
+  function clearAllClusters() {
+    if (!confirm("Reset semua CU & assignment untuk session ini?")) return;
+    setCus([]);
+    setAssignments({});
+    toast("♻️ Reset berjaya.");
+  }
+
+  async function exportJSON() {
+    setErr("");
+    const sid = (sessionId || "").trim() || "dacum-demo";
+
+    // Build CU -> activities
+    const cuList = cus.map((cu) => ({
+      id: cu.id,
+      title: cu.title,
+      notes: cu.notes || "",
+      activities: [],
+    }));
+
+    const cuIndex = {};
+    cuList.forEach((c) => (cuIndex[c.id] = c));
+
+    const unassigned = [];
+
+    for (const card of sortedCards) {
+      const cuId = assignments[card.id];
+      const item = {
+        id: card.id,
+        time: card.time,
+        activity: card.activity,
+      };
+
+      if (cuId && cuIndex[cuId]) cuIndex[cuId].activities.push(item);
+      else unassigned.push(item);
+    }
+
+    const payload = {
+      sessionId: sid,
+      exportedAt: new Date().toISOString(),
+      totals: {
+        totalCards: sortedCards.length,
+        assigned: assignedCount,
+        unassigned: unassignedCount,
+        cuCount: cus.length,
+      },
+      cus: cuList,
+      unassigned,
+    };
+
+    const text = JSON.stringify(payload, null, 2);
+
+    try {
+      await navigator.clipboard.writeText(text);
+      toast("📋 Export JSON disalin ke clipboard.");
+    } catch {
+      // fallback: show error but still allow manual copy via prompt
+      setErr("Clipboard tidak dibenarkan oleh browser. Cuba manual copy dari popup.");
+      window.prompt("Copy JSON ini:", text);
+    }
+  }
+
+  // ---- UI styles (local) ----
+  const ui = {
+    row: { display: "grid", gridTemplateColumns: "1.2fr 1.1fr 0.9fr", gap: 12, alignItems: "start" },
+    pill: { display: "inline-block", padding: "3px 10px", borderRadius: 999, border: "1px solid #ddd", fontSize: 12, fontWeight: 800, background: "#f7f7f7" },
+    listItem: (active) => ({
+      border: "1px solid #e6e6e6",
+      borderRadius: 10,
+      padding: 10,
+      background: active ? "#f3f6ff" : "#fff",
+      cursor: "pointer",
+      marginBottom: 8,
+    }),
+    mini: { fontSize: 12, opacity: 0.75 },
+    select: { ...styles.input, marginTop: 8 },
+    topBar: { display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginTop: 10 },
+    small: { ...styles.smallBtn, width: "auto" },
+    danger: { ...styles.smallBtn, width: "auto", border: "1px solid #b00020", color: "#b00020" },
+  };
 
   return (
     <div style={styles.page}>
       <div style={styles.headerRow}>
         <div>
-          <h1 style={styles.title}>Clustering CU</h1>
+          <h1 style={styles.title}>Clustering CU (MVP)</h1>
           <div style={styles.subTitle}>
             Status: <b>{status}</b> | Session: <b>{sessionId}</b>
+            <span style={{ marginLeft: 10, ...ui.pill }}>
+              Total: {sortedCards.length} | Assigned: {assignedCount} | Unassigned: {unassignedCount}
+            </span>
           </div>
           {error ? <div style={styles.error}>⚠ {error}</div> : null}
-        </div>
+          {err ? <div style={styles.error}>⚠ {err}</div> : null}
+          {msg ? <div style={styles.success}>{msg}</div> : null}
 
-        <div style={styles.sessionBox}>
-          <div style={{ fontSize: 12, fontWeight: 800, marginBottom: 6 }}>
-            Kawalan
+          <div style={ui.topBar}>
+            <div style={{ minWidth: 240 }}>
+              <label style={{ ...styles.label, marginTop: 0 }}>Tukar Session</label>
+              <input
+                style={{ ...styles.input, marginTop: 6 }}
+                value={sessionId}
+                onChange={(e) => setSessionId(e.target.value)}
+                placeholder="dacum-demo"
+              />
+            </div>
+
+            <div style={{ minWidth: 260 }}>
+              <label style={{ ...styles.label, marginTop: 0 }}>Carian Aktiviti</label>
+              <input
+                style={{ ...styles.input, marginTop: 6 }}
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="contoh: khutbah / jenazah / jadual..."
+              />
+            </div>
+
+            <div style={{ minWidth: 220 }}>
+              <label style={{ ...styles.label, marginTop: 0 }}>Filter</label>
+              <select
+                style={{ ...styles.input, marginTop: 6 }}
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+              >
+                <option value="all">Semua</option>
+                <option value="unassigned">Belum assign</option>
+                <option value="assigned">Sudah assign</option>
+              </select>
+            </div>
+
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 22 }}>
+              <button type="button" style={ui.small} onClick={createCU}>
+                + CU Baru
+              </button>
+              <button type="button" style={ui.small} onClick={exportJSON}>
+                Export JSON (Copy)
+              </button>
+              <button type="button" style={ui.danger} onClick={clearAllClusters} title="Reset CU & assignment untuk session ini">
+                Reset
+              </button>
+            </div>
           </div>
 
-          <label style={{ ...styles.label, marginTop: 0 }}>TAJUK NOSS</label>
-          <input
-            style={{ ...styles.input, marginTop: 6 }}
-            value={sessionId}
-            onChange={(e) => setSessionId(e.target.value)}
-            placeholder="dacum-demo"
-          />
-
           <div style={styles.tip}>
-            Fasa ini akan membentuk CU (grouping) daripada aktiviti mentah.
-            Buat masa ini, kita paparkan senarai aktiviti sebagai rujukan.
+            Cara guna: (1) Cipta CU → (2) Assign aktiviti kepada CU guna dropdown → (3) Export JSON untuk fasa CPC/CP.
           </div>
         </div>
       </div>
 
-      <div style={styles.card}>
-        {sorted.length === 0 ? (
-          <div style={styles.empty}>
-            Tiada data untuk session ini. Sila masukkan aktiviti di <b>/panel</b>.
+      <div style={ui.row}>
+        {/* LEFT: Activity list */}
+        <div style={styles.card}>
+          <div style={{ fontWeight: 900, marginBottom: 10 }}>
+            Aktiviti Mentah ({filteredCards.length})
           </div>
-        ) : (
-          <div style={{ overflowX: "auto" }}>
-            <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 900 }}>
-              <thead>
-                <tr>
-                  <th style={{ border: "1px solid #ddd", padding: 8, textAlign: "left" }}>Masa</th>
-                  <th style={{ border: "1px solid #ddd", padding: 8, textAlign: "left" }}>Aktiviti (Mentah)</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sorted.map((c) => (
-                  <tr key={c.id}>
-                    <td style={{ border: "1px solid #ddd", padding: 8, width: 140 }}>
-                      {formatTime(c.time)}
-                    </td>
-                    <td style={{ border: "1px solid #ddd", padding: 8 }}>
-                      {c.activity}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
 
-            <div style={styles.hint}>
-              Nota: Seterusnya kita tambah UI “drag & drop” / “tagging” untuk group aktiviti → CU,
-              kemudian AI assist untuk cadang grouping.
+          {filteredCards.length === 0 ? (
+            <div style={styles.empty}>Tiada aktiviti untuk filter/carian ini.</div>
+          ) : (
+            <div>
+              {filteredCards.map((c) => {
+                const cuId = assignments[c.id] || "";
+                const cuTitle = cuId && cuById[cuId] ? cuById[cuId].title : "";
+                const active = selectedCardId === c.id;
+
+                return (
+                  <div
+                    key={c.id}
+                    style={ui.listItem(active)}
+                    onClick={() => setSelectedCardId(c.id)}
+                    title="Klik untuk lihat detail di panel kanan"
+                  >
+                    <div style={{ fontWeight: 800, fontSize: 13, lineHeight: 1.25 }}>
+                      {c.activity}
+                    </div>
+                    <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 8, flexWrap: "wrap" }}>
+                      <span style={ui.mini}>⏱ {formatTime(c.time)}</span>
+                      {cuId ? (
+                        <span style={{ ...ui.pill, background: "#e8f5e9" }}>ASSIGNED: {cuTitle || cuId}</span>
+                      ) : (
+                        <span style={{ ...ui.pill, background: "#fff8c5" }}>UNASSIGNED</span>
+                      )}
+                    </div>
+
+                    <select
+                      style={ui.select}
+                      value={cuId}
+                      onChange={(e) => assignCard(c.id, e.target.value)}
+                    >
+                      <option value="">— Unassigned —</option>
+                      {cus.map((cu) => (
+                        <option key={cu.id} value={cu.id}>
+                          {cu.title}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                );
+              })}
             </div>
+          )}
+        </div>
+
+        {/* MIDDLE: CU buckets */}
+        <div style={styles.card}>
+          <div style={{ fontWeight: 900, marginBottom: 10 }}>
+            Senarai CU ({cus.length})
           </div>
-        )}
+
+          {cus.length === 0 ? (
+            <div style={styles.empty}>
+              Belum ada CU. Klik <b>+ CU Baru</b> untuk mula.
+            </div>
+          ) : (
+            <div>
+              {cus.map((cu) => {
+                const count = countsByCu[cu.id] || 0;
+
+                return (
+                  <div
+                    key={cu.id}
+                    style={{
+                      border: "1px solid #e6e6e6",
+                      borderRadius: 12,
+                      padding: 12,
+                      marginBottom: 10,
+                      background: "#fff",
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
+                      <div style={{ fontWeight: 900 }}>
+                        {cu.title} <span style={ui.pill}>{count} aktiviti</span>
+                      </div>
+                      <button type="button" style={ui.danger} onClick={() => deleteCU(cu.id)}>
+                        Delete
+                      </button>
+                    </div>
+
+                    <label style={{ ...styles.label, marginTop: 10 }}>Rename CU</label>
+                    <input
+                      style={{ ...styles.input, marginTop: 6 }}
+                      value={cu.title}
+                      onChange={(e) => renameCU(cu.id, e.target.value)}
+                      placeholder="Contoh: Pimpin Solat dan Khutbah"
+                    />
+
+                    <div style={{ marginTop: 10, ...ui.mini }}>
+                      (MVP) Assignment dibuat dari senarai aktiviti (kiri). Versi seterusnya kita tambah drag & drop.
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* RIGHT: Inspector */}
+        <div style={styles.card}>
+          <div style={{ fontWeight: 900, marginBottom: 10 }}>Butiran</div>
+
+          {!selectedCard ? (
+            <div style={styles.empty}>
+              Klik salah satu aktiviti di sebelah kiri untuk lihat detail.
+            </div>
+          ) : (
+            <div>
+              <div style={{ ...ui.pill, background: "#f7f7f7" }}>
+                ID: {selectedCard.id}
+              </div>
+
+              <div style={{ marginTop: 10, fontWeight: 900, lineHeight: 1.25 }}>
+                {selectedCard.activity}
+              </div>
+
+              <div style={{ marginTop: 8, ...ui.mini }}>
+                Masa: {formatTime(selectedCard.time)}
+              </div>
+
+              <label style={styles.label}>Assign ke CU</label>
+              <select
+                style={styles.input}
+                value={assignments[selectedCard.id] || ""}
+                onChange={(e) => assignCard(selectedCard.id, e.target.value)}
+              >
+                <option value="">— Unassigned —</option>
+                {cus.map((cu) => (
+                  <option key={cu.id} value={cu.id}>
+                    {cu.title}
+                  </option>
+                ))}
+              </select>
+
+              <button
+                type="button"
+                style={{ ...styles.button, marginTop: 10 }}
+                onClick={() => assignCard(selectedCard.id, "")}
+              >
+                Unassign Aktiviti Ini
+              </button>
+
+              <div style={styles.tip}>
+                Nota: Panel tidak terlibat dalam kluster. Fasilitator yang buat keputusan.
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
 }
+
 
 /**
  * HOME: redirect
