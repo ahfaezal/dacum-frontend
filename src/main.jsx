@@ -294,7 +294,7 @@ function BoardPage() {
     <div style={{ ...styles.page, fontSize: `${16 * fontScale}px` }}>
       <div style={styles.headerRow}>
         <div>
-          <h1 style={styles.title}>Live Board (Anonim)</h1>
+          <h1 style={styles.title}>Live Board (DACUM Card)</h1>
           <div style={styles.subTitle}>
             Status: <b>{status}</b> | Session: <b>{sessionId}</b>{" "}
             {isFrozen ? (
@@ -312,7 +312,7 @@ function BoardPage() {
 
         <div style={styles.sessionBox}>
           <div style={{ fontSize: 12, fontWeight: 800, marginBottom: 6 }}>
-            Kawalan Board
+            PFH Resources Digital
           </div>
 
           <label style={{ ...styles.label, marginTop: 0 }}>TAJUK NOSS</label>
