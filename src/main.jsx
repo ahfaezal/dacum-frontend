@@ -315,7 +315,7 @@ function BoardPage() {
             Kawalan Board
           </div>
 
-          <label style={{ ...styles.label, marginTop: 0 }}>Tukar Session</label>
+          <label style={{ ...styles.label, marginTop: 0 }}>TAJUK NOSS</label>
           <input
             style={{ ...styles.input, marginTop: 6 }}
             value={sessionId}
@@ -430,7 +430,7 @@ function ClusterPage() {
             Kawalan
           </div>
 
-          <label style={{ ...styles.label, marginTop: 0 }}>Tukar Session</label>
+          <label style={{ ...styles.label, marginTop: 0 }}>TAJUK NOSS</label>
           <input
             style={{ ...styles.input, marginTop: 6 }}
             value={sessionId}
