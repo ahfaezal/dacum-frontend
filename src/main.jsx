@@ -193,40 +193,169 @@ function PanelPage() {
  */
 function BoardPage() {
   const [sessionId, setSessionId] = useState("dacum-demo");
+
+  // LIVE CONTROL
+  const [isFrozen, setIsFrozen] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  // Cards (polling) — kita freeze di UI (bukan stop fetch) supaya stabil
   const { cards, status, error } = useCards(sessionId);
 
-  const sortedCards = useMemo(() => sortByTimeAsc(cards), [cards]);
-  const rows = useMemo(() => chunk(sortedCards, COLUMNS), [sortedCards]);
+  // Simpan snapshot bila freeze
+  const [frozenCards, setFrozenCards] = useState([]);
+
+  // Track “baru masuk” untuk highlight
+  const prevIdsRef = useRef(new Set());
+  const [newMap, setNewMap] = useState({}); // { [id]: expireAt }
+
+  // Bila ada data baru, kira mana yang baru
+  useEffect(() => {
+    const now = Date.now();
+    const prev = prevIdsRef.current;
+    const next = new Set(cards.map((c) => c.id));
+
+    // Detect new ids
+    const newlyAdded = [];
+    for (const c of cards) {
+      if (!prev.has(c.id)) newlyAdded.push(c.id);
+    }
+
+    // Update prev
+    prevIdsRef.current = next;
+
+    // Set highlight expire time (12s)
+    if (newlyAdded.length > 0) {
+      setNewMap((old) => {
+        const copy = { ...old };
+        newlyAdded.forEach((id) => {
+          copy[id] = now + 12000; // 12 saat
+        });
+        return copy;
+      });
+    }
+
+    // Cleanup expired highlights
+    const t = setTimeout(() => {
+      setNewMap((old) => {
+        const copy = { ...old };
+        Object.keys(copy).forEach((k) => {
+          if (copy[k] <= Date.now()) delete copy[k];
+        });
+        return copy;
+      });
+    }, 800);
+
+    return () => clearTimeout(t);
+  }, [cards]);
+
+  // Freeze logic: bila freeze ON, kunci snapshot
+  useEffect(() => {
+    if (isFrozen) {
+      setFrozenCards(cards);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isFrozen]);
+
+  // Fullscreen helper
+  async function toggleFullscreen() {
+    try {
+      if (!document.fullscreenElement) {
+        await document.documentElement.requestFullscreen();
+        setIsFullscreen(true);
+      } else {
+        await document.exitFullscreen();
+        setIsFullscreen(false);
+      }
+    } catch {
+      // jika browser block, ignore
+    }
+  }
+
+  // Bila user tekan Esc keluar fullscreen, sync state
+  useEffect(() => {
+    const onFs = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener("fullscreenchange", onFs);
+    return () => document.removeEventListener("fullscreenchange", onFs);
+  }, []);
+
+  // Data yang dipaparkan bergantung kepada freeze
+  const displayCards = useMemo(() => {
+    const src = isFrozen ? frozenCards : cards;
+    return sortByTimeAsc(src);
+  }, [cards, frozenCards, isFrozen]);
+
+  const rows = useMemo(() => chunk(displayCards, COLUMNS), [displayCards]);
+
+  // Font scale bila fullscreen
+  const fontScale = isFullscreen ? 1.2 : 1.0;
 
   return (
-    <div style={styles.page}>
+    <div style={{ ...styles.page, fontSize: `${16 * fontScale}px` }}>
       <div style={styles.headerRow}>
         <div>
           <h1 style={styles.title}>Live Board (Anonim)</h1>
           <div style={styles.subTitle}>
-            Status: <b>{status}</b> | Session: <b>{sessionId}</b>
+            Status: <b>{status}</b> | Session: <b>{sessionId}</b>{" "}
+            {isFrozen ? (
+              <span style={{ ...styles.badgePill, background: "#111", color: "#fff" }}>
+                PAUSE
+              </span>
+            ) : (
+              <span style={{ ...styles.badgePill, background: "#e8f5e9" }}>
+                LIVE
+              </span>
+            )}
           </div>
           {error ? <div style={styles.error}>⚠ {error}</div> : null}
         </div>
 
         <div style={styles.sessionBox}>
           <div style={{ fontSize: 12, fontWeight: 800, marginBottom: 6 }}>
-            Tukar Session
+            Kawalan Board
           </div>
+
+          <label style={{ ...styles.label, marginTop: 0 }}>Tukar Session</label>
           <input
-            style={{ ...styles.input, marginTop: 0 }}
+            style={{ ...styles.input, marginTop: 6 }}
             value={sessionId}
             onChange={(e) => setSessionId(e.target.value)}
             placeholder="dacum-demo"
           />
+
+          <div style={{ display: "flex", gap: 10, marginTop: 10, flexWrap: "wrap" }}>
+            <button
+              type="button"
+              style={{
+                ...styles.smallBtn,
+                ...(isFrozen ? { background: "#111", color: "#fff", border: "1px solid #111" } : null),
+              }}
+              onClick={() => setIsFrozen((v) => !v)}
+              title="Pause/Resume paparan (data masih masuk di backend)"
+            >
+              {isFrozen ? "Resume" : "Freeze"}
+            </button>
+
+            <button
+              type="button"
+              style={{
+                ...styles.smallBtn,
+                ...(isFullscreen ? { background: "#111", color: "#fff", border: "1px solid #111" } : null),
+              }}
+              onClick={toggleFullscreen}
+              title="Fullscreen untuk projektor/TV"
+            >
+              {isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
+            </button>
+          </div>
+
           <div style={styles.tip}>
-            Paparan ini sengaja tidak tunjuk nama panel (untuk keselesaan).
+            Nama panel disembunyikan untuk keselesaan. “Freeze” hanya kunci paparan supaya fasilitator boleh bincang tanpa gangguan.
           </div>
         </div>
       </div>
 
       <div style={styles.card}>
-        {sortedCards.length === 0 ? (
+        {displayCards.length === 0 ? (
           <div style={styles.empty}>Belum ada aktiviti. Panel boleh mula hantar.</div>
         ) : (
           <div style={styles.tableWrap}>
@@ -236,13 +365,22 @@ function BoardPage() {
                   <tr key={rIdx}>
                     {Array.from({ length: COLUMNS }).map((_, cIdx) => {
                       const item = row[cIdx];
+                      const isNew = item && newMap[item.id] && newMap[item.id] > Date.now();
+
                       return (
-                        <td key={cIdx} style={styles.td}>
+                        <td
+                          key={cIdx}
+                          style={{
+                            ...styles.td,
+                            ...(isNew ? styles.tdNew : null),
+                          }}
+                        >
                           {item ? (
                             <div>
                               <div style={styles.cellText}>{item.activity}</div>
                               <div style={styles.cellMeta}>
                                 <span style={styles.timeOnly}>{formatTime(item.time)}</span>
+                                {isNew ? <span style={styles.newBadge}>BARU</span> : null}
                               </div>
                             </div>
                           ) : (
@@ -385,6 +523,41 @@ const styles = {
     border: "1px solid #ddd",
     cursor: "pointer",
     fontWeight: 800,
+  },
+  
+  smallBtn: {
+    padding: "8px 10px",
+    borderRadius: 10,
+    border: "1px solid #ddd",
+    background: "#fff",
+    cursor: "pointer",
+    fontWeight: 800,
+    fontSize: 12,
+  },
+
+  badgePill: {
+    display: "inline-block",
+    padding: "2px 10px",
+    borderRadius: 999,
+    border: "1px solid #ddd",
+    fontSize: 11,
+    fontWeight: 900,
+    marginLeft: 8,
+  },
+
+  tdNew: {
+    background: "#fff8c5", // highlight kuning lembut (aktiviti baru)
+  },
+
+  newBadge: {
+    display: "inline-block",
+    padding: "1px 6px",
+    borderRadius: 999,
+    border: "1px solid #ddd",
+    fontSize: 10,
+    fontWeight: 900,
+    background: "#111",
+    color: "#fff",
   },
   error: { marginTop: 10, color: "#b00020", fontSize: 13 },
   success: { marginTop: 10, color: "#0a7a2f", fontSize: 13, fontWeight: 700 },
