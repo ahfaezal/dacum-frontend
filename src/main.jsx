@@ -36,7 +36,7 @@ function chunk(arr, size) {
  */
 function usePath() {
   const [path, setPath] = useState(window.location.pathname || "/");
-  useEffect(() => {
+  () => {
     const onPop = () => setPath(window.location.pathname || "/");
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
@@ -85,7 +85,6 @@ function useCards(sessionId) {
     fetchCards();
     const t = setInterval(fetchCards, POLL_MS);
     return () => clearInterval(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
 
   return { cards, status, error, refetch: fetchCards };
@@ -255,7 +254,7 @@ function BoardPage() {
       setFrozenCards(cards);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isFrozen]);
+  }, [isFrozen, cards]);
 
   // Fullscreen helper
   async function toggleFullscreen() {
