@@ -273,9 +273,29 @@ function BoardPage() {
     }
   }
 
-  // AI Cluster (Preview) - dummy handler
-function handleAIClusterPreview() {
-  alert("AI Cluster (Preview) triggered. Next: clustering logic.");
+// AI Cluster (Preview) - call backend
+async function handleAIClusterPreview() {
+  try {
+    const res = await fetch(
+      "https://dacum-backend.onrender.com/api/cluster/preview",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          sessionId,
+        }),
+      }
+    );
+
+    const data = await res.json();
+    console.log("AI Cluster Result:", data);
+    alert("AI clustering berjaya. Semak Console (F12).");
+  } catch (err) {
+    console.error("AI Cluster Error:", err);
+    alert("Ralat semasa AI clustering. Semak Console.");
+  }
 }
 
   // Bila user tekan Esc keluar fullscreen, sync state
