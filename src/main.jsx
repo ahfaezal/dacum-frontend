@@ -96,12 +96,150 @@ function useCards(sessionId) {
  * PANEL VIEW (telefon) — hanya borang input
  */
 function PanelPage() {
-  const [sessionId, setSessionId] = useState("dacum-demo");
+  const [sessionId, setSessionId] = useState("");
   const [name, setName] = useState("");
   const [activity, setActivity] = useState("");
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
 
+{/* =========================
+    AI Cluster Panel (UI)
+   ========================= */}
+<div style={{ marginTop: 16, padding: 12, border: "1px solid #ddd", borderRadius: 12 }}>
+  <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+    <strong>Cluster Result</strong>
+
+    <label explainedby="" style={{ display: "flex", gap: 6, alignItems: "center" }}>
+      Threshold:
+      <input
+        type="number"
+        step="0.01"
+        min="0"
+        max="1"
+        value={similarityThreshold}
+        onChange={(e) => setSimilarityThreshold(e.target.value)}
+        style={{ width: 90 }}
+      />
+    </label>
+
+    <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+      Min Size:
+      <input
+        type="number"
+        step="1"
+        min="2"
+        max="20"
+        value={minClusterSize}
+        onChange={(e) => setMinClusterSize(e.target.value)}
+        style={{ width: 70 }}
+      />
+    </label>
+
+    <button onClick={runClusterPreview} disabled={clusterLoading}>
+      Run
+    </button>
+
+    {clusterResult?.totalCards != null && (
+      <span style={{ opacity: 0.8 }}>
+        totalCards: <b>{clusterResult.totalCards}</b>
+      </span>
+    )}
+
+    {clusterResult?.meta?.unassignedCount != null && (
+      <span style={{ opacity: 0.8 }}>
+        unassigned: <b>{clusterResult.meta.unassignedCount}</b>
+      </span>
+    )}
+  </div>
+
+  {clusterError ? (
+    <div style={{ marginTop: 10, color: "crimson" }}>
+      <b>Error:</b> {clusterError}
+    </div>
+  ) : null}
+
+  {!clusterResult ? (
+    <div style={{ marginTop: 10, opacity: 0.75 }}>
+      Klik <b>Run</b> untuk lihat cluster dalam UI.
+    </div>
+  ) : (
+    <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "2fr 1fr", gap: 12 }}>
+      {/* LEFT: clusters */}
+      <div>
+        <div style={{ fontWeight: 700, marginBottom: 8 }}>
+          Clusters ({clusterResult?.clusters?.length || 0})
+        </div>
+
+        {(clusterResult?.clusters || []).length === 0 ? (
+          <div style={{ opacity: 0.8 }}>
+            Tiada cluster terbentuk (cuba turunkan threshold atau kecilkan min size).
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {(clusterResult.clusters || []).map((cl) => (
+              <div
+                key={cl.clusterId || cl.theme}
+                style={{
+                  border: "1px solid #e5e5e5",
+                  borderRadius: 12,
+                  padding: 10,
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+                  <div>
+                    <div style={{ fontWeight: 700 }}>
+                      {cl.theme || "CU"}
+                    </div>
+                    <div style={{ opacity: 0.75, fontSize: 12 }}>
+                      {cl.clusterId ? `ID: ${cl.clusterId}` : ""}
+                    </div>
+                  </div>
+
+                  <div style={{ textAlign: "right" }}>
+                    <div>
+                      <b>{cl.count ?? (cl.items?.length || 0)}</b> items
+                    </div>
+                    <div style={{ fontSize: 12, opacity: 0.8 }}>
+                      strength: <b>{cl.strength || "-"}</b>
+                    </div>
+                  </div>
+                </div>
+
+                <ul style={{ margin: "10px 0 0", paddingLeft: 18 }}>
+                  {(cl.items || []).map((it) => (
+                    <li key={it.id ?? it.name}>
+                      {it.name || it.activity || "(no text)"}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* RIGHT: unassigned */}
+      <div>
+        <div style={{ fontWeight: 700, marginBottom: 8 }}>
+          Unassigned ({(clusterResult?.unassigned || []).length})
+        </div>
+
+        {(clusterResult?.unassigned || []).length === 0 ? (
+          <div style={{ opacity: 0.8 }}>Semua item masuk cluster.</div>
+        ) : (
+          <div style={{ fontFamily: "monospace", fontSize: 12, whiteSpace: "pre-wrap" }}>
+            {(clusterResult.unassigned || []).join(", ")}
+          </div>
+        )}
+
+        <div style={{ marginTop: 12, fontSize: 12, opacity: 0.8 }}>
+          Tip: Jika unassigned tinggi, turunkan threshold (cth 0.55 → 0.50) atau kecilkan min size.
+        </div>
+      </div>
+    </div>
+  )}
+</div>
+  
   async function submitCard(e) {
     e.preventDefault();
     setErr("");
