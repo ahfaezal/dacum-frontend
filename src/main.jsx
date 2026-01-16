@@ -337,7 +337,7 @@ function handleAIClusterPreview() {
               onClick={() => setIsFrozen((v) => !v)}
               title="Pause/Resume paparan (data masih masuk di backend)"
             >
-              {isFrozen ? "Resume" : "Freeze Q"}
+              {isFrozen ? "Resume" : "Freeze"}
             </button>
 
             <button
