@@ -343,6 +343,17 @@ function handleAIClusterPreview() {
             <button
               type="button"
               style={{
+              ...styles.smallBtn,
+              }}
+              onClick={handleAIClusterPreview}
+              title="Cadangan AI untuk klusterkan aktiviti (preview)"
+            >
+              AI Cluster (Preview)
+            </button>
+            
+            <button
+              type="button"
+              style={{
                 ...styles.smallBtn,
                 ...(isFullscreen ? { background: "#111", color: "#fff", border: "1px solid #111" } : null),
               }}
