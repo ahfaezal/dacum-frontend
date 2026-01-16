@@ -271,6 +271,11 @@ function BoardPage() {
     }
   }
 
+  // AI Cluster (Preview) - dummy handler
+function handleAIClusterPreview() {
+  alert("AI Cluster (Preview) triggered. Next: clustering logic.");
+}
+
   // Bila user tekan Esc keluar fullscreen, sync state
   useEffect(() => {
     const onFs = () => setIsFullscreen(!!document.fullscreenElement);
