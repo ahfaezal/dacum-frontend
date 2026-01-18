@@ -18,9 +18,11 @@ const apiBase = String(API_BASE || "")
   const [maxClusters, setMaxClusters] = useState(12);
   // Auto ambil session dari URL (?session=Masjid)
   useEffect(() => {
-    const sp = new URLSearchParams(window.location.search);
-    const s = sp.get("session");
-    if (s) setSessionId(String(s));
+  const h = String(window.location.hash || "");
+  const qs = h.includes("?") ? h.split("?")[1] : "";
+  const sp = new URLSearchParams(qs);
+  const s = sp.get("session");
+  if (s) setSessionId(String(s));
   }, []);
 
   // =========================
@@ -184,6 +186,7 @@ useEffect(() => {
       const r = await fetch(
         `${apiBase}/api/session/summary/${encodeURIComponent(sid)}`
       );
+      
       const j = await r.json();
       if (alive && j && j.ok) setSummary(j);
     } catch (e) {
