@@ -3,13 +3,6 @@ import React, { useEffect, useRef, useState, useMemo } from "react";
 const API_BASE =
   import.meta.env.VITE_API_BASE || "https://dacum-backend.onrender.com";
 
-export default function ClusterPage() {
-  const apiBase = useMemo(() => {
-    const v = String(API_BASE || "").trim();
-    if (!v) return "https://dacum-backend.onrender.com";
-    return v.replace("onrenderer.com", "onrender.com").replace(/\/+$/, "");
-  }, []);
-
   // =========================
   // Session + tuning params
   // =========================
