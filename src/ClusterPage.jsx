@@ -178,9 +178,7 @@ useEffect(() => {
     if (!sid) return;
 
     try {
-    const r = await fetch(
-    `${apiBase}/api/session/summary/${encodeURIComponent(sid)}`
-    );
+    const r = await fetch(`${apiBase}/api/session/summary/${encodeURIComponent(sid)}`);   
     const j = await r.json();
     if (j && j.ok) setSummary(j);
   } catch (e) {
