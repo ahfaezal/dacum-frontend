@@ -481,7 +481,8 @@ useEffect(() => {
       background: "#fff",
       cursor: "pointer",
     }}
-
+           
+          </div>
           <div style={{ minWidth: 260 }}>
             <div style={{ fontSize: 12, marginBottom: 6 }}>Carian Aktiviti</div>
             <input
