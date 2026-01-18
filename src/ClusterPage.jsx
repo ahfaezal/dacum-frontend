@@ -36,6 +36,82 @@ export default function ClusterPage() {
   const [cus, setCus] = useState([]); // [{ id, title, notes }]
   const [assignments, setAssignments] = useState({}); // { [cardId]: cuId }
 
+  function slugify(s) {
+  return String(s || "")
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
+}
+
+function applyAIResult(ai) {
+  const clusters = Array.isArray(ai?.clusters) ? ai.clusters : [];
+  if (!clusters.length) {
+    alert("Tiada cluster dalam AI result.");
+    return;
+  }
+
+  // 1) bina CU mapping: title -> cuId
+  setCus((prevCus) => {
+    const nextCus = Array.isArray(prevCus) ? [...prevCus] : [];
+    const titleToId = new Map(nextCus.map((c) => [String(c.title || "").trim(), c.id]));
+
+    for (const cl of clusters) {
+      const title = String(cl?.title || "").trim();
+      if (!title) continue;
+
+      if (!titleToId.has(title)) {
+        const newCu = {
+          id: `ai-${slugify(title)}-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+          title,
+          notes: "Auto-generated dari AI Preview",
+        };
+        nextCus.push(newCu);
+        titleToId.set(title, newCu.id);
+      }
+    }
+
+    // simpan mapping untuk step assignment (guna window temp)
+    window.__aiTitleToCuId = titleToId;
+    return nextCus;
+  });
+
+  // 2) assign cardIds -> cuId
+  setAssignments((prev) => {
+    const next = { ...(prev || {}) };
+
+    // guna mapping yang baru dibina (fallback: bina semula dari cus jika perlu)
+    const titleToId =
+      window.__aiTitleToCuId instanceof Map ? window.__aiTitleToCuId : new Map();
+
+    const alreadyAssigned = new Set(Object.keys(next).map((k) => String(k)));
+
+    for (const cl of clusters) {
+      const title = String(cl?.title || "").trim();
+      const cuId = titleToId.get(title);
+      if (!cuId) continue;
+
+      const ids = Array.isArray(cl?.cardIds) ? cl.cardIds : [];
+      for (const rawId of ids) {
+        const cardId = String(rawId);
+
+        // Kalau cardId dah ada assignment (manual / dari cluster lain), jangan override
+        if (alreadyAssigned.has(cardId)) continue;
+
+        next[cardId] = cuId;
+        alreadyAssigned.add(cardId);
+      }
+    }
+
+    // cleanup
+    try { delete window.__aiTitleToCuId; } catch {}
+
+    return next;
+  });
+
+  alert("AI auto-assign siap. Sila semak & betulkan jika perlu.");
+}
+  
   // =========================
   // Helpers
   // =========================
@@ -401,36 +477,47 @@ export default function ClusterPage() {
               + CU Baru
             </button>
 
-            <button
-              onClick={loadCluster}
-              disabled={loading}
-              style={{
-                padding: "10px 12px",
-                borderRadius: 8,
-                border: "1px solid #111",
-                background: loading ? "#eee" : "#111",
-                color: loading ? "#333" : "#fff",
-                cursor: loading ? "not-allowed" : "pointer",
-              }}
-              title="Jana AI cluster preview (REAL)"
-            >
-              {loading ? "Menjana..." : "AI Cluster (Preview)"}
-            </button>
+<button
+  onClick={loadCluster}
+  disabled={loading}
+  style={{
+    padding: "10px 12px",
+    borderRadius: 8,
+    border: "1px solid #111",
+    background: loading ? "#eee" : "#111",
+    color: loading ? "#333" : "#fff",
+    cursor: loading ? "not-allowed" : "pointer",
+  }}
+  title="Jana AI cluster preview (REAL)"
+>
+  {loading ? "Menjana..." : "AI Cluster (Preview)"}
+</button>
 
-            <button
-              onClick={handleApplyAI}
-              disabled={!data || !Array.isArray(data?.clusters) || data.clusters.length === 0}
-              style={{
-                padding: "10px 12px",
-                borderRadius: 8,
-                border: "1px solid #111",
-                background: !data || !Array.isArray(data?.clusters) || data.clusters.length === 0 ? "#eee" : "#fff",
-                cursor: !data || !Array.isArray(data?.clusters) || data.clusters.length === 0 ? "not-allowed" : "pointer",
-              }}
-              title="Apply AI result -> CU + assignment automatik"
-            >
-              Apply AI Result
-            </button>
+<button
+  onClick={handleApplyAI}
+  disabled={!data || !Array.isArray(data.clusters) || data.clusters.length === 0}
+  style={{
+    padding: "10px 12px",
+    borderRadius: 8,
+    border: "1px solid #111",
+    background:
+      !data || !Array.isArray(data.clusters) || data.clusters.length === 0
+        ? "#eee"
+        : "#0a7",
+    color:
+      !data || !Array.isArray(data.clusters) || data.clusters.length === 0
+        ? "#333"
+        : "#fff",
+    cursor:
+      !data || !Array.isArray(data.clusters) || data.clusters.length === 0
+        ? "not-allowed"
+        : "pointer",
+  }}
+  title="Apply AI result → auto assign CU ikut cardIds"
+>
+  Apply AI Result
+</button>
+
 
             <button
               onClick={() => {
