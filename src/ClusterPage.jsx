@@ -165,37 +165,38 @@ export default function ClusterPage() {
   }
 
 // =========================
-// LIVE refresh (polling)
+// LIVE refresh (polling) - SESSION SUMMARY SAHAJA
+// (Tidak panggil /api/cluster/preview supaya tak "auto preview")
 // =========================
 useEffect(() => {
   let alive = true;
+  const sid = String(sessionId || "").trim();
+  if (!sid) return;
 
   async function tick() {
     if (!alive) return;
- 
-    // Panggil API preview untuk dapatkan keadaan terkini
-    const sid = String(sessionId || "").trim();
-    if (!sid) return;
-
     try {
-    const r = await fetch(`${apiBase}/api/session/summary/${encodeURIComponent(sid)}`);   
-    const j = await r.json();
-    if (j && j.ok) setSummary(j);
-  } catch (e) {
-    // diam
+      const r = await fetch(
+        `${apiBase}/api/session/summary/${encodeURIComponent(sid)}`
+      );
+      const j = await r.json();
+      if (alive && j && j.ok) setSummary(j);
+    } catch (e) {
+      // diam
+    }
   }
 
-  // load sekali bila page mula / bila session bertukar
+  // jalan sekali bila mount / tukar session
   tick();
 
-  // polling setiap 1.5s (boleh ubah)
+  // polling setiap 1.5s
   const t = setInterval(tick, 1500);
 
   return () => {
     alive = false;
     clearInterval(t);
   };
-}, [sessionId]);
+}, [apiBase, sessionId]);
   
   // =========================
   // Actions
