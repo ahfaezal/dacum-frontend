@@ -4,7 +4,6 @@ const API_BASE =
   import.meta.env.VITE_API_BASE || "https://dacum-backend.onrender.com";
 
 export default function LiveBoard({ onAgreed }) {
-
   const apiBase = useMemo(() => {
     const v = String(API_BASE || "").trim();
     if (!v) return "https://dacum-backend.onrender.com";
@@ -17,13 +16,8 @@ export default function LiveBoard({ onAgreed }) {
   function goAgreed() {
     const sid = String(sessionId || "").trim();
     if (!sid) return alert("Sila isi Session dulu.");
-
-    // Kalau anda masih nak kekalkan callback parent (optional)
-    try {
-      onAgreed?.(sid);
-    } catch (e) {
-      // diam
-    }
+    onAgreed?.(sid); // ✅ serah navigation kepada App.jsx (hash routing)
+  }
 
   // Poll ringkas untuk papar “live card”
   useEffect(() => {
@@ -109,6 +103,7 @@ export default function LiveBoard({ onAgreed }) {
               </div>
             </div>
           ))}
+
           {cards.length === 0 ? (
             <div style={{ gridColumn: "1 / -1", color: "#777", fontSize: 13 }}>
               Belum ada kad untuk session ini (atau endpoint `/api/cards/:sessionId` belum wujud).
