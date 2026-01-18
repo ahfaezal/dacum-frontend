@@ -679,9 +679,9 @@ useEffect(() => {
               <>
                 Generated: <code>{data.generatedAt}</code>{" "}
           <span style={{ color: "#888" }}>
-            (params: thr=<code>{params.similarityThreshold ?? similarityThreshold}</code>,{" "}
-            min=<code>{params.minClusterSize ?? minClusterSize}</code>,{" "}
-            max=<code>{params.maxClusters ?? maxClusters}</code>)
+            (params: thr={String(params.similarityThreshold ?? similarityThreshold)}, min=
+            {String(params.minClusterSize ?? minClusterSize)}, max=
+            {String(params.maxClusters ?? maxClusters)})
           </span>
               </>
             ) : (
