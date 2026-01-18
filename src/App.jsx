@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import ClusterPage from "./ClusterPage.jsx";
-import LiveBoard from "./pages/LiveBoard.jsx";
+import LiveBoard from "./LiveBoard.jsx";
 
 function parseHash() {
   // contoh:
