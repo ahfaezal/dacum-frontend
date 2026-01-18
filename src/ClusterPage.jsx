@@ -457,23 +457,9 @@ useEffect(() => {
         }}
       >
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "end" }}>
-          {onBack ? (
-    <button
-      onClick={onBack}
-      style={{
-        padding: "10px 12px",
-        borderRadius: 8,
-        border: "1px solid #ccc",
-        background: "#fff",
-        cursor: "pointer",
-      }}
-    >
-      ← Back
-    </button>
-  ) : null}
-
+{onBack ? (
   <button
-    onClick={createNewCU}
+    onClick={onBack}
     style={{
       padding: "10px 12px",
       borderRadius: 8,
@@ -481,41 +467,46 @@ useEffect(() => {
       background: "#fff",
       cursor: "pointer",
     }}
-           
-          </div>
-          <div style={{ minWidth: 260 }}>
-            <div style={{ fontSize: 12, marginBottom: 6 }}>Carian Aktiviti</div>
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="contoh: khutbah / jenazah / jadual..."
-              style={{
-                width: "100%",
-                padding: "10px 12px",
-                borderRadius: 8,
-                border: "1px solid #ccc",
-              }}
-            />
-          </div>
+  >
+    ← Back
+  </button>
+) : null}
 
-          <div style={{ minWidth: 180 }}>
-            <div style={{ fontSize: 12, marginBottom: 6 }}>Filter</div>
-            <select
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-              style={{
-                width: "100%",
-                padding: "10px 12px",
-                borderRadius: 8,
-                border: "1px solid #ccc",
-                background: "#fff",
-              }}
-            >
-              <option value="all">Semua</option>
-              <option value="unassigned">Unassigned</option>
-              <option value="assigned">Assigned</option>
-            </select>
-          </div>
+</div>
+
+<div style={{ minWidth: 260 }}>
+  <div style={{ fontSize: 12, marginBottom: 6 }}>Carian Aktiviti</div>
+  <input
+    value={query}
+    onChange={(e) => setQuery(e.target.value)}
+    placeholder="contoh: khutbah / jenazah / jadual..."
+    style={{
+      width: "100%",
+      padding: "10px 12px",
+      borderRadius: 8,
+      border: "1px solid #ccc",
+    }}
+  />
+</div>
+
+<div style={{ minWidth: 180 }}>
+  <div style={{ fontSize: 12, marginBottom: 6 }}>Filter</div>
+  <select
+    value={filter}
+    onChange={(e) => setFilter(e.target.value)}
+    style={{
+      width: "100%",
+      padding: "10px 12px",
+      borderRadius: 8,
+      border: "1px solid #ccc",
+      background: "#fff",
+    }}
+  >
+    <option value="all">Semua</option>
+    <option value="unassigned">Unassigned</option>
+    <option value="assigned">Assigned</option>
+  </select>
+</div>
 
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <button
