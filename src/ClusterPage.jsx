@@ -1,20 +1,19 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 
-const API_BASE = import.meta.env.VITE_API_BASE || "https://dacum-backend.onrender.com";
+const API_BASE =
+  import.meta.env.VITE_API_BASE || "https://dacum-backend.onrender.com";
 
 export default function ClusterPage() {
   const apiBase = useMemo(() => {
-    // Pastikan domain betul
     const v = String(API_BASE || "").trim();
     if (!v) return "https://dacum-backend.onrender.com";
-    return v.replace("onrenderer.com", "onrender.com");
+    return v.replace("onrenderer.com", "onrender.com").replace(/\/+$/, "");
   }, []);
 
   // =========================
   // Session + tuning params
   // =========================
   const [sessionId, setSessionId] = useState("Masjid");
-
   const [similarityThreshold, setSimilarityThreshold] = useState(0.55);
   const [minClusterSize, setMinClusterSize] = useState(2);
   const [maxClusters, setMaxClusters] = useState(12);
@@ -30,99 +29,40 @@ export default function ClusterPage() {
   const [filter, setFilter] = useState("all"); // all | assigned | unassigned
 
   // =========================
-  // "Manual clustering" state
-  // CU list + assignments
+  // Manual clustering state
   // =========================
   const [cus, setCus] = useState([]); // [{ id, title, notes }]
   const [assignments, setAssignments] = useState({}); // { [cardId]: cuId }
 
-  function slugify(s) {
-  return String(s || "")
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)/g, "");
-}
+  // Abort fetch if user klik banyak kali
+  const abortRef = useRef(null);
 
-function applyAIResult(ai) {
-  const clusters = Array.isArray(ai?.clusters) ? ai.clusters : [];
-  if (!clusters.length) {
-    alert("Tiada cluster dalam AI result.");
-    return;
-  }
-
-  // 1) bina CU mapping: title -> cuId
-  setCus((prevCus) => {
-    const nextCus = Array.isArray(prevCus) ? [...prevCus] : [];
-    const titleToId = new Map(nextCus.map((c) => [String(c.title || "").trim(), c.id]));
-
-    for (const cl of clusters) {
-      const title = String(cl?.title || "").trim();
-      if (!title) continue;
-
-      if (!titleToId.has(title)) {
-        const newCu = {
-          id: `ai-${slugify(title)}-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-          title,
-          notes: "Auto-generated dari AI Preview",
-        };
-        nextCus.push(newCu);
-        titleToId.set(title, newCu.id);
-      }
-    }
-
-    // simpan mapping untuk step assignment (guna window temp)
-    window.__aiTitleToCuId = titleToId;
-    return nextCus;
-  });
-
-  // 2) assign cardIds -> cuId
-  setAssignments((prev) => {
-    const next = { ...(prev || {}) };
-
-    // guna mapping yang baru dibina (fallback: bina semula dari cus jika perlu)
-    const titleToId =
-      window.__aiTitleToCuId instanceof Map ? window.__aiTitleToCuId : new Map();
-
-    const alreadyAssigned = new Set(Object.keys(next).map((k) => String(k)));
-
-    for (const cl of clusters) {
-      const title = String(cl?.title || "").trim();
-      const cuId = titleToId.get(title);
-      if (!cuId) continue;
-
-      const ids = Array.isArray(cl?.cardIds) ? cl.cardIds : [];
-      for (const rawId of ids) {
-        const cardId = String(rawId);
-
-        // Kalau cardId dah ada assignment (manual / dari cluster lain), jangan override
-        if (alreadyAssigned.has(cardId)) continue;
-
-        next[cardId] = cuId;
-        alreadyAssigned.add(cardId);
-      }
-    }
-
-    // cleanup
-    try { delete window.__aiTitleToCuId; } catch {}
-
-    return next;
-  });
-
-  alert("AI auto-assign siap. Sila semak & betulkan jika perlu.");
-}
-  
   // =========================
   // Helpers
   // =========================
+  function safeTitle(s) {
+    const t = String(s || "").trim();
+    return t || "CU";
+  }
+
+  function slugify(s) {
+    return String(s || "")
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/(^-|-$)/g, "");
+  }
+
+  function makeCuIdFromTitle(title) {
+    const base = slugify(title) || "cu";
+    return `ai-${base}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  }
+
   const clusters = Array.isArray(data?.clusters) ? data.clusters : [];
   const params = data?.params || {};
   const meta = data?.meta || {};
 
-  // Build "cards" list from AI response (best effort)
-  // - Backend preview returns clusters[].items = [{id,name}]
-  // - Also returns unassigned = [id,...] but without names
-  // So: our "Aktiviti Mentah" will primarily be from clustered items.
+  // Build cards list from AI response (best effort)
   const aiCards = useMemo(() => {
     const out = [];
     const seen = new Set();
@@ -139,13 +79,12 @@ function applyAIResult(ai) {
         out.push({
           id: key,
           activity: name,
-          // Backend preview tak bagi timestamp; jadi kita kosongkan
           time: "",
         });
       }
     }
 
-    // Optional: add placeholders for unassigned ids (no name available)
+    // Optional placeholders for unassigned IDs (no name from backend)
     if (Array.isArray(data?.unassigned)) {
       for (const uid of data.unassigned) {
         const key = String(uid);
@@ -163,9 +102,10 @@ function applyAIResult(ai) {
     return out;
   }, [clusters, data?.unassigned]);
 
-  const cuOptions = useMemo(() => {
-    return cus.map((c) => ({ id: c.id, title: c.title }));
-  }, [cus]);
+  const cuOptions = useMemo(
+    () => cus.map((c) => ({ id: c.id, title: c.title })),
+    [cus]
+  );
 
   const assignedCount = useMemo(() => {
     const keys = Object.keys(assignments || {});
@@ -187,20 +127,7 @@ function applyAIResult(ai) {
     });
   }, [aiCards, assignments, filter, query]);
 
-  function safeTitle(s) {
-    const t = String(s || "").trim();
-    return t || "CU";
-  }
-
   function buildExportJson() {
-    // Format yang mudah untuk CPC/CP nanti:
-    // {
-    //   sessionId,
-    //   generatedAt,
-    //   cus: [{cuId, title}],
-    //   assignments: [{cardId, activity, cuId, cuTitle}],
-    //   rawAI: data
-    // }
     const cuMap = new Map(cus.map((c) => [c.id, c.title]));
     const rows = aiCards.map((c) => {
       const cuId = assignments[String(c.id)] || "";
@@ -208,7 +135,7 @@ function applyAIResult(ai) {
         cardId: String(c.id),
         activity: String(c.activity || ""),
         cuId,
-        cuTitle: cuId ? (cuMap.get(cuId) || "") : "",
+        cuTitle: cuId ? cuMap.get(cuId) || "" : "",
       };
     });
 
@@ -251,10 +178,18 @@ function applyAIResult(ai) {
     setLoading(true);
     setErr("");
 
+    // abort previous request
+    try {
+      if (abortRef.current) abortRef.current.abort();
+    } catch {}
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     try {
       const res = await fetch(`${apiBase}/api/cluster/preview`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
         body: JSON.stringify({
           sessionId: sid,
           similarityThreshold: Number(similarityThreshold),
@@ -265,13 +200,16 @@ function applyAIResult(ai) {
 
       if (!res.ok) {
         const text = await res.text().catch(() => "");
-        throw new Error(`HTTP ${res.status}: ${text || "Request gagal. Sila semak backend."}`);
+        throw new Error(
+          `HTTP ${res.status}: ${text || "Request gagal. Sila semak backend."}`
+        );
       }
 
       const json = await res.json();
       setData(json);
       alert("AI clustering berjaya.");
     } catch (e) {
+      if (String(e?.name) === "AbortError") return;
       setErr(e?.message ? String(e.message) : String(e));
       setData(null);
     } finally {
@@ -314,57 +252,10 @@ function applyAIResult(ai) {
     });
   }
 
-  function handleApplyAI() {
-    // Apply AI -> bina CU dari clusters + assign cardIds
-    if (!data || !Array.isArray(data.clusters) || data.clusters.length === 0) {
-      alert("Tiada AI result untuk apply.");
-      return;
-    }
-
-    // Backend preview (graph) biasanya return: clusters[].theme + items[]
-    // Tapi screenshot anda (LLM style) return: clusters[].title + cardIds[]
-    // Kita support dua-dua.
-    const rawClusters = data.clusters;
-
-    const newCus = rawClusters.map((cl, idx) => {
-      const title = safeTitle(cl?.theme || cl?.title || `CU ${idx + 1}`);
-      return {
-        id: `ai-cu-${Date.now()}-${idx}`,
-        title,
-        notes: "Auto (AI)",
-      };
-    });
-
-    const titleToCuId = new Map(newCus.map((c) => [c.title, c.id]));
-    const nextAssignments = {};
-
-    rawClusters.forEach((cl, idx) => {
-      const title = safeTitle(cl?.theme || cl?.title || `CU ${idx + 1}`);
-      const cuId = titleToCuId.get(title) || newCus[idx].id;
-
-      // Case A: items[] (graph preview)
-      const items = Array.isArray(cl?.items) ? cl.items : [];
-      if (items.length) {
-        items.forEach((it) => {
-          const id = it?.id;
-          if (id == null) return;
-          nextAssignments[String(id)] = cuId;
-        });
-        return;
-      }
-
-      // Case B: cardIds[] (LLM style)
-      const cardIds = Array.isArray(cl?.cardIds) ? cl.cardIds : [];
-      cardIds.forEach((id) => {
-        if (id == null) return;
-        nextAssignments[String(id)] = cuId;
-      });
-    });
-
-    setCus(newCus);
-    setAssignments(nextAssignments);
-
-    alert("AI result berjaya di-apply (CU + assignment).");
+  function renameCU(cuId, newTitle) {
+    setCus((prev) =>
+      prev.map((c) => (c.id === cuId ? { ...c, title: safeTitle(newTitle) } : c))
+    );
   }
 
   function setCardAssignment(cardId, cuId) {
@@ -375,13 +266,124 @@ function applyAIResult(ai) {
     }));
   }
 
-  function renameCU(cuId, newTitle) {
-    setCus((prev) =>
-      prev.map((c) => {
-        if (c.id !== cuId) return c;
-        return { ...c, title: safeTitle(newTitle) };
-      })
-    );
+  /**
+   * Apply AI result:
+   * mode="merge"  -> tambah CU yang belum ada + assign yang belum di-assign (tak override manual)
+   * mode="replace"-> reset CU + assignment ikut AI sepenuhnya
+   */
+  function applyAIResult(mode = "merge") {
+    if (!data || !Array.isArray(data.clusters) || data.clusters.length === 0) {
+      alert("Tiada AI result untuk apply.");
+      return;
+    }
+
+    const rawClusters = data.clusters;
+
+    // Normalise cluster shape:
+    // - title: theme || title || fallback
+    // - ids: from items[].id or cardIds[]
+    const norm = rawClusters.map((cl, idx) => {
+      const title = safeTitle(cl?.theme || cl?.title || `CU ${idx + 1}`);
+
+      const idsFromItems = Array.isArray(cl?.items)
+        ? cl.items.map((it) => it?.id).filter((x) => x != null)
+        : [];
+
+      const idsFromCardIds = Array.isArray(cl?.cardIds)
+        ? cl.cardIds.filter((x) => x != null)
+        : [];
+
+      const ids = (idsFromItems.length ? idsFromItems : idsFromCardIds).map((x) =>
+        String(x)
+      );
+
+      return { title, ids };
+    });
+
+    if (mode === "replace") {
+      // Replace: build fresh CU + assignments
+      const newCus = norm.map((c) => ({
+        id: makeCuIdFromTitle(c.title),
+        title: c.title,
+        notes: "Auto (AI)",
+      }));
+
+      const titleToCuId = new Map(newCus.map((c) => [c.title, c.id]));
+      const nextAssignments = {};
+
+      for (const c of norm) {
+        const cuId = titleToCuId.get(c.title);
+        if (!cuId) continue;
+        for (const cardId of c.ids) nextAssignments[cardId] = cuId;
+      }
+
+      setCus(newCus);
+      setAssignments(nextAssignments);
+      alert("Apply AI (Replace) siap. Semua CU/assignment ditetapkan ikut AI.");
+      return;
+    }
+
+    // Merge mode:
+    // 1) tambah CU yang belum wujud (matching by title)
+    // 2) assign card yang belum ada assignment sahaja (tak override manual)
+    setCus((prevCus) => {
+      const existing = Array.isArray(prevCus) ? [...prevCus] : [];
+      const titleToId = new Map(
+        existing.map((c) => [String(c.title || "").trim(), c.id])
+      );
+
+      for (const c of norm) {
+        const t = String(c.title || "").trim();
+        if (!t) continue;
+        if (!titleToId.has(t)) {
+          const newCu = {
+            id: makeCuIdFromTitle(t),
+            title: t,
+            notes: "Auto-generated dari AI Preview",
+          };
+          existing.push(newCu);
+          titleToId.set(t, newCu.id);
+        }
+      }
+
+      // Simpan mapping utk step assignments (guna ref temp)
+      applyAIResult.__titleToId = titleToId;
+      return existing;
+    });
+
+    setAssignments((prev) => {
+      const next = { ...(prev || {}) };
+      const alreadyAssigned = new Set(
+        Object.keys(next)
+          .filter((k) => next[k])
+          .map((k) => String(k))
+      );
+
+      const titleToId =
+        applyAIResult.__titleToId instanceof Map
+          ? applyAIResult.__titleToId
+          : new Map();
+
+      for (const c of norm) {
+        const cuId = titleToId.get(String(c.title || "").trim());
+        if (!cuId) continue;
+
+        for (const cardId of c.ids) {
+          if (alreadyAssigned.has(cardId)) continue; // jangan override manual
+          next[cardId] = cuId;
+          alreadyAssigned.add(cardId);
+        }
+      }
+
+      // cleanup temp
+      try {
+        delete applyAIResult.__titleToId;
+      } catch {}
+
+      return next;
+    });
+
+    alert("Apply AI (Merge) siap. Sila semak & betulkan jika perlu.");
   }
 
   // =========================
@@ -395,7 +397,8 @@ function applyAIResult(ai) {
         Status: <strong>connected</strong> | API: <code>{apiBase}</code> | Session:{" "}
         <strong>{String(sessionId || "").trim() || "-"}</strong>{" "}
         <span style={{ marginLeft: 10 }}>
-          Total: <strong>{aiCards.length}</strong> | Assigned: <strong>{assignedCount}</strong> | Unassigned:{" "}
+          Total: <strong>{aiCards.length}</strong> | Assigned:{" "}
+          <strong>{assignedCount}</strong> | Unassigned:{" "}
           <strong>{Math.max(0, aiCards.length - assignedCount)}</strong>
         </span>
       </div>
@@ -477,47 +480,71 @@ function applyAIResult(ai) {
               + CU Baru
             </button>
 
-<button
-  onClick={loadCluster}
-  disabled={loading}
-  style={{
-    padding: "10px 12px",
-    borderRadius: 8,
-    border: "1px solid #111",
-    background: loading ? "#eee" : "#111",
-    color: loading ? "#333" : "#fff",
-    cursor: loading ? "not-allowed" : "pointer",
-  }}
-  title="Jana AI cluster preview (REAL)"
->
-  {loading ? "Menjana..." : "AI Cluster (Preview)"}
-</button>
+            <button
+              onClick={loadCluster}
+              disabled={loading}
+              style={{
+                padding: "10px 12px",
+                borderRadius: 8,
+                border: "1px solid #111",
+                background: loading ? "#eee" : "#111",
+                color: loading ? "#333" : "#fff",
+                cursor: loading ? "not-allowed" : "pointer",
+              }}
+              title="Jana AI cluster preview (REAL)"
+            >
+              {loading ? "Menjana..." : "AI Cluster (Preview)"}
+            </button>
 
-<button
-  onClick={handleApplyAI}
-  disabled={!data || !Array.isArray(data.clusters) || data.clusters.length === 0}
-  style={{
-    padding: "10px 12px",
-    borderRadius: 8,
-    border: "1px solid #111",
-    background:
-      !data || !Array.isArray(data.clusters) || data.clusters.length === 0
-        ? "#eee"
-        : "#0a7",
-    color:
-      !data || !Array.isArray(data.clusters) || data.clusters.length === 0
-        ? "#333"
-        : "#fff",
-    cursor:
-      !data || !Array.isArray(data.clusters) || data.clusters.length === 0
-        ? "not-allowed"
-        : "pointer",
-  }}
-  title="Apply AI result → auto assign CU ikut cardIds"
->
-  Apply AI Result
-</button>
+            <button
+              onClick={() => applyAIResult("merge")}
+              disabled={!data || !Array.isArray(data.clusters) || data.clusters.length === 0}
+              style={{
+                padding: "10px 12px",
+                borderRadius: 8,
+                border: "1px solid #111",
+                background:
+                  !data || !Array.isArray(data.clusters) || data.clusters.length === 0
+                    ? "#eee"
+                    : "#0a7",
+                color:
+                  !data || !Array.isArray(data.clusters) || data.clusters.length === 0
+                    ? "#333"
+                    : "#fff",
+                cursor:
+                  !data || !Array.isArray(data.clusters) || data.clusters.length === 0
+                    ? "not-allowed"
+                    : "pointer",
+              }}
+              title="Merge AI result → tambah CU + assign yang belum di-assign (tak override manual)"
+            >
+              Apply AI (Merge)
+            </button>
 
+            <button
+              onClick={() => applyAIResult("replace")}
+              disabled={!data || !Array.isArray(data.clusters) || data.clusters.length === 0}
+              style={{
+                padding: "10px 12px",
+                borderRadius: 8,
+                border: "1px solid #111",
+                background:
+                  !data || !Array.isArray(data.clusters) || data.clusters.length === 0
+                    ? "#eee"
+                    : "#f59f00",
+                color:
+                  !data || !Array.isArray(data.clusters) || data.clusters.length === 0
+                    ? "#333"
+                    : "#111",
+                cursor:
+                  !data || !Array.isArray(data.clusters) || data.clusters.length === 0
+                    ? "not-allowed"
+                    : "pointer",
+              }}
+              title="Replace AI result → reset CU + assignment ikut AI sepenuhnya"
+            >
+              Apply AI (Replace)
+            </button>
 
             <button
               onClick={() => {
@@ -611,11 +638,14 @@ function applyAIResult(ai) {
                 Generated: <code>{data.generatedAt}</code>{" "}
                 <span style={{ color: "#888" }}>
                   (params: thr={params.similarityThreshold ?? similarityThreshold}, min=
-                  {params.minClusterSize ?? minClusterSize})
+                  {params.minClusterSize ?? minClusterSize}, max=
+                  {params.maxClusters ?? maxClusters})
                 </span>
               </>
             ) : (
-              <span>Tip: Klik “AI Cluster (Preview)” → “Apply AI Result” → semak/ubah manual → Export JSON</span>
+              <span>
+                Tip: Klik “AI Cluster (Preview)” → “Apply AI (Merge/Replace)” → semak/ubah manual → Export JSON
+              </span>
             )}
           </div>
         </div>
@@ -639,13 +669,23 @@ function applyAIResult(ai) {
         {/* Raw AI summary */}
         {data ? (
           <div style={{ marginTop: 10, fontSize: 12, color: "#555" }}>
-            AI Preview: totalCards=<strong>{data.totalCards ?? "-"}</strong> | clusters=<strong>{meta.totalClusters ?? clusters.length}</strong> | clusteredItems=<strong>{meta.totalClusteredItems ?? "-"}</strong> | unassigned=<strong>{meta.unassignedCount ?? (data.unassigned?.length ?? 0)}</strong>
+            AI Preview: totalCards=<strong>{data.totalCards ?? "-"}</strong> | clusters=
+            <strong>{meta.totalClusters ?? clusters.length}</strong> | clusteredItems=
+            <strong>{meta.totalClusteredItems ?? "-"}</strong> | unassigned=
+            <strong>{meta.unassignedCount ?? (data.unassigned?.length ?? 0)}</strong>
           </div>
         ) : null}
       </div>
 
       {/* Main layout: Aktiviti Mentah | Senarai CU | Butiran */}
-      <div style={{ display: "grid", gridTemplateColumns: "420px 320px 1fr", gap: 12, alignItems: "start" }}>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "420px 320px 1fr",
+          gap: 12,
+          alignItems: "start",
+        }}
+      >
         {/* Aktiviti Mentah */}
         <div
           style={{
@@ -657,9 +697,7 @@ function applyAIResult(ai) {
         >
           <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
             <strong>Aktiviti Mentah ({filteredCards.length})</strong>
-            <span style={{ fontSize: 12, color: "#888" }}>
-              (Total: {aiCards.length})
-            </span>
+            <span style={{ fontSize: 12, color: "#888" }}>(Total: {aiCards.length})</span>
           </div>
 
           <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 10 }}>
@@ -767,7 +805,7 @@ function applyAIResult(ai) {
 
           {cus.length === 0 ? (
             <div style={{ marginTop: 10, fontSize: 13, color: "#666" }}>
-              Belum ada CU. Klik <strong>Apply AI Result</strong> atau <strong>+ CU Baru</strong> untuk mula.
+              Belum ada CU. Klik <strong>Apply AI</strong> atau <strong>+ CU Baru</strong> untuk mula.
             </div>
           ) : null}
 
@@ -787,8 +825,7 @@ function applyAIResult(ai) {
                 >
                   <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
                     <div style={{ fontWeight: 800 }}>
-                      {cu.title}{" "}
-                      <span style={{ fontSize: 12, color: "#666" }}>({count} aktiviti)</span>
+                      {cu.title} <span style={{ fontSize: 12, color: "#666" }}>({count} aktiviti)</span>
                     </div>
                     <button
                       onClick={() => deleteCU(cu.id)}
@@ -823,7 +860,7 @@ function applyAIResult(ai) {
           </div>
         </div>
 
-        {/* Butiran (AI raw + export preview) */}
+        {/* Butiran */}
         <div
           style={{
             border: "1px solid #ddd",
@@ -835,8 +872,16 @@ function applyAIResult(ai) {
           <strong>Butiran</strong>
 
           <div style={{ marginTop: 10, fontSize: 13, color: "#555" }}>
-            Klik “AI Cluster (Preview)” untuk dapatkan AI result. Klik “Apply AI Result” untuk bina CU & assignment automatik.
-            Lepas itu anda boleh ubah secara manual melalui dropdown aktiviti.
+            Klik “AI Cluster (Preview)” untuk dapatkan AI result. Lepas itu pilih Apply:
+            <ul style={{ marginTop: 8 }}>
+              <li>
+                <strong>Merge</strong>: tambah CU & assign yang belum di-assign (tak override manual).
+              </li>
+              <li>
+                <strong>Replace</strong>: reset semua CU & assignment ikut AI.
+              </li>
+            </ul>
+            Lepas apply, anda boleh ubah manual melalui dropdown aktiviti.
           </div>
 
           <div style={{ marginTop: 12, borderTop: "1px solid #eee", paddingTop: 12 }}>
@@ -925,7 +970,8 @@ function applyAIResult(ai) {
 
       {/* Footer tips */}
       <div style={{ marginTop: 12, fontSize: 12, color: "#777" }}>
-        Tip: Jika “Unassigned” banyak, cuba turunkan <code>similarityThreshold</code> (contoh 0.55 → 0.50) atau naikkan <code>maxClusters</code>.
+        Tip: Jika “Unassigned” banyak, cuba turunkan <code>similarityThreshold</code> (contoh 0.55 → 0.50) atau naikkan{" "}
+        <code>maxClusters</code>.
       </div>
     </div>
   );
