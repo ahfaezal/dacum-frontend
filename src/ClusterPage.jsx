@@ -695,12 +695,28 @@ export default function ClusterPage() {
             background: "#fff",
           }}
         >
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              gap: 10,
+              alignItems: "center",
+            }}
+          >
             <strong>Aktiviti Mentah ({filteredCards.length})</strong>
-            <span style={{ fontSize: 12, color: "#888" }}>(Total: {aiCards.length})</span>
+            <span style={{ fontSize: 12, color: "#888" }}>
+              (Total: {aiCards.length})
+            </span>
           </div>
 
-          <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 10 }}>
+          <div
+            style={{
+              marginTop: 10,
+              display: "flex",
+              flexDirection: "column",
+              gap: 10,
+            }}
+          >
             {filteredCards.length === 0 ? (
               <div style={{ fontSize: 13, color: "#666" }}>
                 Tiada aktiviti untuk filter/carian ini.
@@ -712,7 +728,9 @@ export default function ClusterPage() {
 
             {filteredCards.map((card) => {
               const cuId = assignments[String(card.id)] || "";
-              const cuTitle = cuId ? (cus.find((x) => x.id === cuId)?.title || "") : "";
+              const cuTitle = cuId
+                ? cus.find((x) => x.id === cuId)?.title || ""
+                : "";
               const isAssigned = Boolean(cuId);
 
               return (
@@ -725,9 +743,18 @@ export default function ClusterPage() {
                     background: "#fff",
                   }}
                 >
-                  <div style={{ fontWeight: 700, marginBottom: 6 }}>{card.activity}</div>
+                  <div style={{ fontWeight: 700, marginBottom: 6 }}>
+                    {card.activity}
+                  </div>
 
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      flexWrap: "wrap",
+                    }}
+                  >
                     <span
                       style={{
                         fontSize: 12,
@@ -786,7 +813,14 @@ export default function ClusterPage() {
             background: "#fff",
           }}
         >
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              gap: 10,
+              alignItems: "center",
+            }}
+          >
             <strong>Senarai CU ({cus.length})</strong>
             <button
               onClick={createNewCU}
@@ -805,13 +839,23 @@ export default function ClusterPage() {
 
           {cus.length === 0 ? (
             <div style={{ marginTop: 10, fontSize: 13, color: "#666" }}>
-              Belum ada CU. Klik <strong>Apply AI</strong> atau <strong>+ CU Baru</strong> untuk mula.
+              Belum ada CU. Klik <strong>Apply AI</strong> atau{" "}
+              <strong>+ CU Baru</strong> untuk mula.
             </div>
           ) : null}
 
-          <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 10 }}>
+          <div
+            style={{
+              marginTop: 10,
+              display: "flex",
+              flexDirection: "column",
+              gap: 10,
+            }}
+          >
             {cus.map((cu) => {
-              const count = Object.values(assignments || {}).filter((x) => x === cu.id).length;
+              const count = Object.values(assignments || {}).filter(
+                (x) => x === cu.id
+              ).length;
 
               return (
                 <div
@@ -823,9 +867,19 @@ export default function ClusterPage() {
                     background: "#fff",
                   }}
                 >
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      gap: 8,
+                      alignItems: "center",
+                    }}
+                  >
                     <div style={{ fontWeight: 800 }}>
-                      {cu.title} <span style={{ fontSize: 12, color: "#666" }}>({count} aktiviti)</span>
+                      {cu.title}{" "}
+                      <span style={{ fontSize: 12, color: "#666" }}>
+                        ({count} aktiviti)
+                      </span>
                     </div>
                     <button
                       onClick={() => deleteCU(cu.id)}
@@ -843,7 +897,9 @@ export default function ClusterPage() {
                     </button>
                   </div>
 
-                  <div style={{ marginTop: 8, fontSize: 12, color: "#666" }}>Rename CU</div>
+                  <div style={{ marginTop: 8, fontSize: 12, color: "#666" }}>
+                    Rename CU
+                  </div>
                   <input
                     value={cu.title}
                     onChange={(e) => renameCU(cu.id, e.target.value)}
@@ -872,10 +928,12 @@ export default function ClusterPage() {
           <strong>Butiran</strong>
 
           <div style={{ marginTop: 10, fontSize: 13, color: "#555" }}>
-            Klik “AI Cluster (Preview)” untuk dapatkan AI result. Lepas itu pilih Apply:
+            Klik “AI Cluster (Preview)” untuk dapatkan AI result. Lepas itu pilih
+            Apply:
             <ul style={{ marginTop: 8 }}>
               <li>
-                <strong>Merge</strong>: tambah CU & assign yang belum di-assign (tak override manual).
+                <strong>Merge</strong>: tambah CU & assign yang belum di-assign
+                (tak override manual).
               </li>
               <li>
                 <strong>Replace</strong>: reset semua CU & assignment ikut AI.
@@ -970,8 +1028,8 @@ export default function ClusterPage() {
 
       {/* Footer tips */}
       <div style={{ marginTop: 12, fontSize: 12, color: "#777" }}>
-        Tip: Jika “Unassigned” banyak, cuba turunkan <code>similarityThreshold</code> (contoh 0.55 → 0.50) atau naikkan{" "}
-        <code>maxClusters</code>.
+        Tip: Jika “Unassigned” banyak, cuba turunkan <code>similarityThreshold</code>{" "}
+        (contoh 0.55 → 0.50) atau naikkan <code>maxClusters</code>.
       </div>
     </div>
   );
