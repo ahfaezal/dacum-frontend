@@ -102,6 +102,7 @@ function PanelPage() {
   const [activity, setActivity] = useState("");
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
+  const [clusterResult, setClusterResult] = useState(null);
 
 {/* =========================
     AI Cluster Panel (UI)
@@ -430,7 +431,13 @@ async function handleAIClusterPreview() {
 
     const data = await res.json();
     console.log("AI Cluster Result:", data);
-    alert("AI clustering berjaya. Semak Console (F12).");
+
+    // ⬇️ TAMBAH DUA BARIS INI
+    setClusterResult(data);
+    navigate("/cluster", setPath);
+
+    // (optional – boleh buang alert nanti)
+    alert("AI clustering berjaya.");
   } catch (err) {
     console.error("AI Cluster Error:", err);
     alert("Ralat semasa AI clustering. Semak Console.");
