@@ -172,11 +172,19 @@ useEffect(() => {
 
   async function tick() {
     if (!alive) return;
-    // Elak spam bila sessionId kosong
-    if (!String(sessionId || "").trim()) return;
-
+ 
     // Panggil API preview untuk dapatkan keadaan terkini
-    await loadCluster({ silent: true });
+    const sid = String(sessionId || "").trim();
+    if (!sid) return;
+
+    try {
+    const r = await fetch(
+    `${apiBase}/api/session/summary/${encodeURIComponent(sid)}`
+    );
+    const j = await r.json();
+    if (j && j.ok) setSummary(j);
+  } catch (e) {
+    // diam
   }
 
   // load sekali bila page mula / bila session bertukar
@@ -189,7 +197,7 @@ useEffect(() => {
     alive = false;
     clearInterval(t);
   };
-}, [sessionId, similarityThreshold, minClusterSize, maxClusters]);
+}, [sessionId]);
   
   // =========================
   // Actions
