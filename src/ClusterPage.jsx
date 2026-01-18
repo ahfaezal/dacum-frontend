@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useMemo } from "react";
 
 const API_BASE =
   import.meta.env.VITE_API_BASE || "https://dacum-backend.onrender.com";
@@ -164,6 +164,33 @@ export default function ClusterPage() {
     }
   }
 
+// =========================
+// LIVE refresh (polling)
+// =========================
+useEffect(() => {
+  let alive = true;
+
+  async function tick() {
+    if (!alive) return;
+    // Elak spam bila sessionId kosong
+    if (!String(sessionId || "").trim()) return;
+
+    // Panggil API preview untuk dapatkan keadaan terkini
+    await loadCluster();
+  }
+
+  // load sekali bila page mula / bila session bertukar
+  tick();
+
+  // polling setiap 1.5s (boleh ubah)
+  const t = setInterval(tick, 1500);
+
+  return () => {
+    alive = false;
+    clearInterval(t);
+  };
+}, [sessionId, similarityThreshold, minClusterSize, maxClusters]);
+  
   // =========================
   // Actions
   // =========================
