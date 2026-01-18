@@ -414,6 +414,7 @@ function BoardPage({ setPath, setClusterResult }) {
               onClick={handleAIClusterPreview}
               title="Cadangan AI untuk klusterkan aktiviti (preview)"
             >
+            <button onClick={handleAIClusterPreview}>
               AI Cluster (Preview)
             </button>
 
