@@ -693,20 +693,20 @@ useEffect(() => {
         </div>
 
         {/* Error */}
-        {err ? (
-          <div
-            style={{
-              marginTop: 10,
-              border: "1px solid #f5c2c7",
-              background: "#f8d7da",
-              color: "#842029",
-              padding: 10,
-              borderRadius: 10,
-            }}
-          >
-            {err}
-          </div>
-        ) : null}
+{err ? (
+  <div
+    style={{
+      marginTop: 10,
+      border: "1px solid #f5c2c7",
+      background: "#f8d7da",
+      color: "#842029",
+      padding: 10,
+      borderRadius: 10,
+    }}
+  >
+    {err}
+  </div>
+) : null}
 
         {/* Raw AI summary */}
         {data ? (
