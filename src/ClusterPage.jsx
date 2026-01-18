@@ -176,7 +176,7 @@ useEffect(() => {
     if (!String(sessionId || "").trim()) return;
 
     // Panggil API preview untuk dapatkan keadaan terkini
-    await loadCluster();
+    await loadCluster({ silent: true });
   }
 
   // load sekali bila page mula / bila session bertukar
@@ -194,7 +194,8 @@ useEffect(() => {
   // =========================
   // Actions
   // =========================
-  async function loadCluster() {
+  async function loadCluster(opts = {}) {
+    const silent = !!opts.silent;
     const sid = String(sessionId || "").trim();
     if (!sid) {
       setErr("Sila isi Session ID dahulu.");
@@ -234,7 +235,7 @@ useEffect(() => {
 
       const json = await res.json();
       setData(json);
-      alert("AI clustering berjaya.");
+      if (!silent) alert("AI clustering berjaya.");
     } catch (e) {
       if (String(e?.name) === "AbortError") return;
       setErr(e?.message ? String(e.message) : String(e));
