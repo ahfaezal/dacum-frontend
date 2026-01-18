@@ -11,68 +11,55 @@ export default function PanelPage() {
   }, []);
 
   const [sessionId, setSessionId] = useState("Masjid");
-  const [text, setText] = useState("");
-  const [saving, setSaving] = useState(false);
+  const [panelName, setPanelName] = useState("");
+  const [activity, setActivity] = useState("");
+  const [sending, setSending] = useState(false);
   const [msg, setMsg] = useState("");
 
-  async function addCards() {
+  async function submitOne() {
     const sid = String(sessionId || "").trim();
-    if (!sid) return alert("Sila isi Session dulu.");
+    const name = String(panelName || "").trim();
+    const act = String(activity || "").trim();
 
-    const raw = String(text || "").trim();
-    if (!raw) return alert("Sila isi aktiviti/kad dulu.");
+    if (!sid) return alert("Sila isi Session.");
+    if (!name) return alert("Sila isi Nama Panel.");
+    if (!act) return alert("Sila isi Aktiviti Kerja.");
 
-    const lines = raw
-      .split("\n")
-      .map((s) => s.trim())
-      .filter(Boolean);
-
-    if (lines.length === 0) return alert("Tiada teks yang sah.");
-
-    setSaving(true);
+    setSending(true);
     setMsg("");
 
     try {
-      for (const name of lines) {
-        let ok = false;
+      // ✅ Endpoint utama (paling munasabah):
+      // POST /api/cards/:sessionId
+      // body: { name, panelName, activity }
+      const url = `${apiBase}/api/cards/${encodeURIComponent(sid)}`;
 
-        // Attempt A: POST /api/cards/add
-        try {
-          const r1 = await fetch(`${apiBase}/api/cards/add`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ sessionId: sid, name }),
-          });
-          const j1 = await r1.json().catch(() => null);
-          if (r1.ok && (j1?.ok || j1?.success || j1)) ok = true;
-        } catch (e) {}
+      const r = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: act,          // supaya selari dengan paparan kad (c.name)
+          panelName: name,    // simpan siapa hantar
+          activity: act,      // redundan tapi selamat
+          time: new Date().toISOString(),
+        }),
+      });
 
-        // Attempt B: POST /api/cards
-        if (!ok) {
-          try {
-            const r2 = await fetch(`${apiBase}/api/cards`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ sessionId: sid, name }),
-            });
-            const j2 = await r2.json().catch(() => null);
-            if (r2.ok && (j2?.ok || j2?.success || j2)) ok = true;
-          } catch (e) {}
-        }
+      const j = await r.json().catch(() => null);
 
-        if (!ok) {
-          throw new Error(
-            "Gagal hantar kad. Semak endpoint backend (POST /api/cards/add atau POST /api/cards)."
-          );
-        }
+      if (!r.ok || (j && j.ok === false)) {
+        throw new Error(
+          (j && (j.error || j.message)) ||
+            `Gagal hantar (HTTP ${r.status}). Endpoint backend mungkin berbeza.`
+        );
       }
 
-      setText("");
-      setMsg(`✅ Berjaya hantar ${lines.length} kad untuk session "${sid}".`);
+      setActivity("");
+      setMsg(`✅ Berjaya dihantar oleh ${name}: ${act}`);
     } catch (e) {
       setMsg(`❌ ${String(e?.message || e)}`);
     } finally {
-      setSaving(false);
+      setSending(false);
     }
   }
 
@@ -84,8 +71,15 @@ export default function PanelPage() {
         API: <code>{apiBase}</code>
       </div>
 
-      <div style={{ border: "1px solid #ddd", borderRadius: 12, padding: 12, background: "#fff" }}>
-        <div style={{ fontWeight: 800, marginBottom: 8 }}>SESSION</div>
+      <div
+        style={{
+          border: "1px solid #ddd",
+          borderRadius: 12,
+          padding: 12,
+          background: "#fff",
+        }}
+      >
+        <div style={{ fontWeight: 800, marginBottom: 6 }}>SESSION</div>
         <input
           value={sessionId}
           onChange={(e) => setSessionId(e.target.value)}
@@ -94,45 +88,61 @@ export default function PanelPage() {
             padding: "10px 12px",
             borderRadius: 10,
             border: "1px solid #ccc",
-            marginBottom: 10,
+            marginBottom: 12,
           }}
         />
 
-        <div style={{ fontWeight: 800, marginBottom: 6 }}>AKTIVITI / KAD (1 BARIS = 1 KAD)</div>
-        <textarea
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          rows={8}
-          placeholder={"Taip 1 aktiviti per baris.\nContoh:\nImamkan Solat Fardu\nSampaikan Khutbah\nSelaras Program Kuliah"}
+        <div style={{ fontWeight: 800, marginBottom: 6 }}>NAMA PANEL</div>
+        <input
+          value={panelName}
+          onChange={(e) => setPanelName(e.target.value)}
+          placeholder="Contoh: Dr. Ahmad / Pn. Siti"
           style={{
             width: "100%",
             padding: "10px 12px",
             borderRadius: 10,
             border: "1px solid #ccc",
-            marginBottom: 10,
+            marginBottom: 12,
+          }}
+        />
+
+        <div style={{ fontWeight: 800, marginBottom: 6 }}>
+          INPUT PANEL (AKTIVITI KERJA)
+        </div>
+        <textarea
+          value={activity}
+          onChange={(e) => setActivity(e.target.value)}
+          rows={4}
+          placeholder="Taip 1 aktiviti kerja sahaja untuk dihantar sekali submit."
+          style={{
+            width: "100%",
+            padding: "10px 12px",
+            borderRadius: 10,
+            border: "1px solid #ccc",
+            marginBottom: 12,
             resize: "vertical",
           }}
         />
 
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 10 }}>
           <button
-            onClick={addCards}
-            disabled={saving}
+            onClick={submitOne}
+            disabled={sending}
             style={{
+              flex: 1,
               padding: "10px 12px",
               borderRadius: 10,
               border: "1px solid #0b5",
-              background: saving ? "#ddd" : "#0b5",
+              background: sending ? "#ddd" : "#0b5",
               color: "#fff",
-              cursor: saving ? "not-allowed" : "pointer",
-              flex: 1,
+              cursor: sending ? "not-allowed" : "pointer",
             }}
           >
-            {saving ? "Menghantar..." : "Hantar Kad"}
+            {sending ? "Menghantar..." : "Submit"}
           </button>
 
           <button
-            onClick={() => setText("")}
+            onClick={() => setActivity("")}
             style={{
               padding: "10px 12px",
               borderRadius: 10,
@@ -147,11 +157,13 @@ export default function PanelPage() {
         </div>
 
         {msg ? (
-          <div style={{ marginTop: 10, fontSize: 13, whiteSpace: "pre-wrap" }}>{msg}</div>
+          <div style={{ marginTop: 10, fontSize: 13, whiteSpace: "pre-wrap" }}>
+            {msg}
+          </div>
         ) : null}
 
         <div style={{ marginTop: 10, fontSize: 12, color: "#666" }}>
-          Nota: Tiada butang “Agreed” di sini. Fasilitator akan “Agreed” di LiveBoard bila semua input selesai.
+          Nota: Panel hanya hantar kad. Fasilitator akan klik “Agreed” di LiveBoard bila semua input selesai.
         </div>
       </div>
     </div>
