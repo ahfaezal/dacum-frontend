@@ -8,8 +8,8 @@ const API_BASE =
   (import.meta?.env?.VITE_API_BASE && String(import.meta.env.VITE_API_BASE)) ||
   "https://dacum-backend.onrender.com";
 
-const COLUMNS = 8;               // jadual 8 kolum macam contoh
-const POLL_MS = 1500;            // auto update tanpa refresh (sementara socket)
+const COLUMNS = 8; // jadual 8 kolum macam contoh
+const POLL_MS = 1500; // auto update tanpa refresh (sementara socket)
 
 /**
  * Utils
@@ -59,7 +59,6 @@ function useCards(sessionId) {
   const [status, setStatus] = useState("checking...");
   const [error, setError] = useState("");
   const lastJsonRef = useRef("");
-  const [view, setView] = useState("board");
 
   async function fetchCards() {
     const sid = (sessionId || "").trim();
@@ -102,99 +101,7 @@ function PanelPage() {
   const [activity, setActivity] = useState("");
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
-  const [clusterResult, setClusterResult] = useState(null);
-  const [similarityThreshold, setSimilarityThreshold] = useState(0.55);
-  const [minClusterSize, setMinClusterSize] = useState(2);
 
-{/* =========================
-    AI Cluster Panel (UI) - sementara (no-run) supaya /panel tidak crash
-   ========================= */}
-<div
-  style={{
-    marginTop: 16,
-    padding: 12,
-    border: "1px solid #ddd",
-    borderRadius: 12,
-    background: "#fafafa",
-  }}
->
-  <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-    <strong>AI Cluster (Preview)</strong>
-
-    <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
-      Threshold:
-      <input
-        type="number"
-        step="0.01"
-        min="0"
-        max="1"
-        value={similarityThreshold}
-        onChange={(e) => setSimilarityThreshold(parseFloat(e.target.value || "0"))}
-        style={{ width: 90 }}
-      />
-    </label>
-
-    <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
-      Min Size:
-      <input
-        type="number"
-        step="1"
-        min="2"
-        max="20"
-        value={minClusterSize}
-        onChange={(e) => setMinClusterSize(parseInt(e.target.value || "2", 10))}
-        style={{ width: 70 }}
-      />
-    </label>
-
-    {/* BUTANG RUN dimatikan sementara supaya /panel tak crash.
-        Clustering akan dibuat di /cluster atau button di /board. */}
-    <button disabled title="Sementara ini clustering dibuat di /cluster">
-      Run (disabled)
-    </button>
-
-    {clusterResult?.totalCards != null && (
-      <span style={{ opacity: 0.8 }}>
-        totalCards: <b>{clusterResult.totalCards}</b>
-      </span>
-    )}
-
-    {clusterResult?.meta?.unassignedCount != null && (
-      <span style={{ opacity: 0.8 }}>
-        unassigned: <b>{clusterResult.meta.unassignedCount}</b>
-      </span>
-    )}
-  </div>
-
-  <div style={{ marginTop: 10, opacity: 0.75, lineHeight: 1.4 }}>
-    Nota: Panel ini untuk input kad. Clustering akan dijalankan di halaman <b>/cluster</b> (atau
-    melalui button di <b>/board</b>) supaya aliran kerja lebih kemas.
-  </div>
-</div>
-
-
-      {/* RIGHT: unassigned */}
-      <div>
-        <div style={{ fontWeight: 700, marginBottom: 8 }}>
-          Unassigned ({(clusterResult?.unassigned || []).length})
-        </div>
-
-        {(clusterResult?.unassigned || []).length === 0 ? (
-          <div style={{ opacity: 0.8 }}>Semua item masuk cluster.</div>
-        ) : (
-          <div style={{ fontFamily: "monospace", fontSize: 12, whiteSpace: "pre-wrap" }}>
-            {(clusterResult.unassigned || []).join(", ")}
-          </div>
-        )}
-
-        <div style={{ marginTop: 12, fontSize: 12, opacity: 0.8 }}>
-          Tip: Jika unassigned tinggi, turunkan threshold (cth 0.55 → 0.50) atau kecilkan min size.
-        </div>
-      </div>
-    </div>
-  )}
-</div>
-  
   async function submitCard(e) {
     e.preventDefault();
     setErr("");
@@ -240,9 +147,6 @@ function PanelPage() {
             onChange={(e) => setSessionId(e.target.value)}
             placeholder="contoh: dacum-demo"
           />
-          <div style={styles.tip}>
-            Tip: guna session berbeza untuk workshop berbeza.
-          </div>
 
           <label style={styles.label}>Nama</label>
           <input
@@ -267,17 +171,7 @@ function PanelPage() {
 
           {err ? <div style={styles.error}>⚠ {err}</div> : null}
           {msg ? <div style={styles.success}>{msg}</div> : null}
-
-          <div style={styles.footerNote}>
-            * Versi awal: nanti kita tambah scan QR sebenar.
-          </div>
         </form>
-      </div>
-
-      <div style={styles.smallLinks}>
-        <div style={{ opacity: 0.75, marginBottom: 8 }}>Link berkaitan:</div>
-        <code style={styles.codeBlock}>/board</code> untuk paparan fasilitator (anonim)
-        <code style={styles.codeBlock}>/cluster</code> untuk semakan clustering (fasa seterusnya)
       </div>
     </div>
   );
@@ -286,7 +180,7 @@ function PanelPage() {
 /**
  * BOARD VIEW (komputer/TV) — live + anonim (tiada nama)
  */
-function BoardPage() {
+function BoardPage({ setPath, setClusterResult }) {
   const [sessionId, setSessionId] = useState("dacum-demo");
 
   // LIVE CONTROL
@@ -345,10 +239,7 @@ function BoardPage() {
 
   // Freeze logic: bila freeze ON, kunci snapshot
   useEffect(() => {
-    if (isFrozen) {
-      setFrozenCards(cards);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (isFrozen) setFrozenCards(cards);
   }, [isFrozen, cards]);
 
   // Fullscreen helper
@@ -362,40 +253,9 @@ function BoardPage() {
         setIsFullscreen(false);
       }
     } catch {
-      // jika browser block, ignore
+      // ignore
     }
   }
-
-// AI Cluster (Preview) - call backend
-async function handleAIClusterPreview() {
-  try {
-    const res = await fetch(
-      "https://dacum-backend.onrender.com/api/cluster/preview",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          sessionId,
-        }),
-      }
-    );
-
-    const data = await res.json();
-    console.log("AI Cluster Result:", data);
-
-    // ⬇️ TAMBAH DUA BARIS INI
-    setClusterResult(data);
-    navigate("/cluster", setPath);
-
-    // (optional – boleh buang alert nanti)
-    alert("AI clustering berjaya.");
-  } catch (err) {
-    console.error("AI Cluster Error:", err);
-    alert("Ralat semasa AI clustering. Semak Console.");
-  }
-}
 
   // Bila user tekan Esc keluar fullscreen, sync state
   useEffect(() => {
@@ -403,6 +263,28 @@ async function handleAIClusterPreview() {
     document.addEventListener("fullscreenchange", onFs);
     return () => document.removeEventListener("fullscreenchange", onFs);
   }, []);
+
+  // AI Cluster (Preview) - call backend
+  async function handleAIClusterPreview() {
+    try {
+      const res = await fetch(`${API_BASE}/api/cluster/preview`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId }),
+      });
+
+      if (!res.ok) throw new Error(`Cluster preview gagal (${res.status})`);
+
+      const data = await res.json();
+      console.log("AI Cluster Result:", data);
+
+      setClusterResult(data);
+      navigate("/cluster", setPath);
+    } catch (err) {
+      console.error("AI Cluster Error:", err);
+      alert("Ralat semasa AI clustering. Semak Console.");
+    }
+  }
 
   // Data yang dipaparkan bergantung kepada freeze
   const displayCards = useMemo(() => {
@@ -423,7 +305,13 @@ async function handleAIClusterPreview() {
           <div style={styles.subTitle}>
             Status: <b>{status}</b> | Session: <b>{sessionId}</b>{" "}
             {isFrozen ? (
-              <span style={{ ...styles.badgePill, background: "#111", color: "#fff" }}>
+              <span
+                style={{
+                  ...styles.badgePill,
+                  background: "#111",
+                  color: "#fff",
+                }}
+              >
                 PAUSE
               </span>
             ) : (
@@ -453,7 +341,9 @@ async function handleAIClusterPreview() {
               type="button"
               style={{
                 ...styles.smallBtn,
-                ...(isFrozen ? { background: "#111", color: "#fff", border: "1px solid #111" } : null),
+                ...(isFrozen
+                  ? { background: "#111", color: "#fff", border: "1px solid #111" }
+                  : null),
               }}
               onClick={() => setIsFrozen((v) => !v)}
               title="Pause/Resume paparan (data masih masuk di backend)"
@@ -463,20 +353,20 @@ async function handleAIClusterPreview() {
 
             <button
               type="button"
-              style={{
-              ...styles.smallBtn,
-              }}
+              style={styles.smallBtn}
               onClick={handleAIClusterPreview}
               title="Cadangan AI untuk klusterkan aktiviti (preview)"
             >
               AI Cluster (Preview)
             </button>
-            
+
             <button
               type="button"
               style={{
                 ...styles.smallBtn,
-                ...(isFullscreen ? { background: "#111", color: "#fff", border: "1px solid #111" } : null),
+                ...(isFullscreen
+                  ? { background: "#111", color: "#fff", border: "1px solid #111" }
+                  : null),
               }}
               onClick={toggleFullscreen}
               title="Fullscreen untuk projektor/TV"
@@ -486,7 +376,7 @@ async function handleAIClusterPreview() {
           </div>
 
           <div style={styles.tip}>
-            Nama panel disembunyikan untuk keselesaan. “Freeze” hanya kunci paparan supaya fasilitator boleh bincang tanpa gangguan.
+            Nama panel disembunyikan. “Freeze” hanya kunci paparan untuk bincang tanpa gangguan.
           </div>
         </div>
       </div>
@@ -502,7 +392,8 @@ async function handleAIClusterPreview() {
                   <tr key={rIdx}>
                     {Array.from({ length: COLUMNS }).map((_, cIdx) => {
                       const item = row[cIdx];
-                      const isNew = item && newMap[item.id] && newMap[item.id] > Date.now();
+                      const isNew =
+                        item && newMap[item.id] && newMap[item.id] > Date.now();
 
                       return (
                         <td
@@ -516,8 +407,12 @@ async function handleAIClusterPreview() {
                             <div>
                               <div style={styles.cellText}>{item.activity}</div>
                               <div style={styles.cellMeta}>
-                                <span style={styles.timeOnly}>{formatTime(item.time)}</span>
-                                {isNew ? <span style={styles.newBadge}>BARU</span> : null}
+                                <span style={styles.timeOnly}>
+                                  {formatTime(item.time)}
+                                </span>
+                                {isNew ? (
+                                  <span style={styles.newBadge}>BARU</span>
+                                ) : null}
                               </div>
                             </div>
                           ) : (
@@ -534,26 +429,17 @@ async function handleAIClusterPreview() {
         )}
 
         <div style={styles.hint}>
-          Tip: Ini paparan “raw + timestamp” (belum grouping). Klustering CU dibuat selepas cukup input.
+          Tip: Ini paparan “raw + timestamp”. Klustering CU dibuat selepas cukup input.
         </div>
       </div>
     </div>
   );
 }
+
 /**
- * CLUSTER VIEW (FASA SETERUSNYA) — Klustering Aktiviti → CU
- * (Buat masa ini: UI placeholder + tarik data ikut session untuk rujukan)
+ * CLUSTER VIEW (MVP) — Manual CU + paparan AI preview (jika ada)
  */
-/**
- * CLUSTER VIEW (MVP) — Klustering Aktiviti → CU (Manual by Fasilitator)
- * Features:
- * - Create/Rename/Delete CU
- * - Assign/Unassign card to CU (dropdown)
- * - Search + Filter (All/Unassigned/Assigned)
- * - Autosave localStorage by session
- * - Export JSON + Copy clipboard
- */
-function ClusterPage() {
+function ClusterPage({ setPath, clusterResult, setClusterResult }) {
   const [sessionId, setSessionId] = useState("dacum-demo");
   const { cards, status, error } = useCards(sessionId);
 
@@ -562,7 +448,7 @@ function ClusterPage() {
   const [filter, setFilter] = useState("all"); // all | unassigned | assigned
   const [selectedCardId, setSelectedCardId] = useState(null);
 
-  // Cluster state
+  // Cluster state (manual)
   const [cus, setCus] = useState([]); // [{id,title,notes}]
   const [assignments, setAssignments] = useState({}); // { [cardId]: cuId }
   const [msg, setMsg] = useState("");
@@ -589,7 +475,11 @@ function ClusterPage() {
       }
       const parsed = JSON.parse(raw);
       setCus(Array.isArray(parsed?.cus) ? parsed.cus : []);
-      setAssignments(parsed?.assignments && typeof parsed.assignments === "object" ? parsed.assignments : {});
+      setAssignments(
+        parsed?.assignments && typeof parsed.assignments === "object"
+          ? parsed.assignments
+          : {}
+      );
     } catch {
       setCus([]);
       setAssignments({});
@@ -614,7 +504,10 @@ function ClusterPage() {
     return c;
   }, [sortedCards, assignments]);
 
-  const unassignedCount = useMemo(() => sortedCards.length - assignedCount, [sortedCards.length, assignedCount]);
+  const unassignedCount = useMemo(
+    () => sortedCards.length - assignedCount,
+    [sortedCards.length, assignedCount]
+  );
 
   const filteredCards = useMemo(() => {
     const q = (query || "").trim().toLowerCase();
@@ -669,15 +562,11 @@ function ClusterPage() {
   }
 
   function renameCU(cuId, title) {
-    setCus((prev) =>
-      prev.map((c) => (c.id === cuId ? { ...c, title: title } : c))
-    );
+    setCus((prev) => prev.map((c) => (c.id === cuId ? { ...c, title } : c)));
   }
 
   function deleteCU(cuId) {
-    // remove CU
     setCus((prev) => prev.filter((c) => c.id !== cuId));
-    // unassign all cards assigned to this CU
     setAssignments((prev) => {
       const copy = { ...prev };
       Object.keys(copy).forEach((cardId) => {
@@ -708,7 +597,6 @@ function ClusterPage() {
     setErr("");
     const sid = (sessionId || "").trim() || "dacum-demo";
 
-    // Build CU -> activities
     const cuList = cus.map((cu) => ({
       id: cu.id,
       title: cu.title,
@@ -723,12 +611,7 @@ function ClusterPage() {
 
     for (const card of sortedCards) {
       const cuId = assignments[card.id];
-      const item = {
-        id: card.id,
-        time: card.time,
-        activity: card.activity,
-      };
-
+      const item = { id: card.id, time: card.time, activity: card.activity };
       if (cuId && cuIndex[cuId]) cuIndex[cuId].activities.push(item);
       else unassigned.push(item);
     }
@@ -742,6 +625,7 @@ function ClusterPage() {
         unassigned: unassignedCount,
         cuCount: cus.length,
       },
+      aiPreview: clusterResult || null,
       cus: cuList,
       unassigned,
     };
@@ -752,16 +636,29 @@ function ClusterPage() {
       await navigator.clipboard.writeText(text);
       toast("📋 Export JSON disalin ke clipboard.");
     } catch {
-      // fallback: show error but still allow manual copy via prompt
-      setErr("Clipboard tidak dibenarkan oleh browser. Cuba manual copy dari popup.");
+      setErr(
+        "Clipboard tidak dibenarkan oleh browser. Cuba manual copy dari popup."
+      );
       window.prompt("Copy JSON ini:", text);
     }
   }
 
-  // ---- UI styles (local) ----
   const ui = {
-    row: { display: "grid", gridTemplateColumns: "1.2fr 1.1fr 0.9fr", gap: 12, alignItems: "start" },
-    pill: { display: "inline-block", padding: "3px 10px", borderRadius: 999, border: "1px solid #ddd", fontSize: 12, fontWeight: 800, background: "#f7f7f7" },
+    row: {
+      display: "grid",
+      gridTemplateColumns: "1.2fr 1.1fr 0.9fr",
+      gap: 12,
+      alignItems: "start",
+    },
+    pill: {
+      display: "inline-block",
+      padding: "3px 10px",
+      borderRadius: 999,
+      border: "1px solid #ddd",
+      fontSize: 12,
+      fontWeight: 800,
+      background: "#f7f7f7",
+    },
     listItem: (active) => ({
       border: "1px solid #e6e6e6",
       borderRadius: 10,
@@ -772,9 +669,20 @@ function ClusterPage() {
     }),
     mini: { fontSize: 12, opacity: 0.75 },
     select: { ...styles.input, marginTop: 8 },
-    topBar: { display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginTop: 10 },
+    topBar: {
+      display: "flex",
+      gap: 10,
+      flexWrap: "wrap",
+      alignItems: "center",
+      marginTop: 10,
+    },
     small: { ...styles.smallBtn, width: "auto" },
-    danger: { ...styles.smallBtn, width: "auto", border: "1px solid #b00020", color: "#b00020" },
+    danger: {
+      ...styles.smallBtn,
+      width: "auto",
+      border: "1px solid #b00020",
+      color: "#b00020",
+    },
   };
 
   return (
@@ -785,9 +693,11 @@ function ClusterPage() {
           <div style={styles.subTitle}>
             Status: <b>{status}</b> | Session: <b>{sessionId}</b>
             <span style={{ marginLeft: 10, ...ui.pill }}>
-              Total: {sortedCards.length} | Assigned: {assignedCount} | Unassigned: {unassignedCount}
+              Total: {sortedCards.length} | Assigned: {assignedCount} | Unassigned:{" "}
+              {unassignedCount}
             </span>
           </div>
+
           {error ? <div style={styles.error}>⚠ {error}</div> : null}
           {err ? <div style={styles.error}>⚠ {err}</div> : null}
           {msg ? <div style={styles.success}>{msg}</div> : null}
@@ -833,15 +743,75 @@ function ClusterPage() {
               <button type="button" style={ui.small} onClick={exportJSON}>
                 Export JSON (Copy)
               </button>
-              <button type="button" style={ui.danger} onClick={clearAllClusters} title="Reset CU & assignment untuk session ini">
+              <button type="button" style={ui.danger} onClick={clearAllClusters}>
                 Reset
+              </button>
+              <button
+                type="button"
+                style={ui.small}
+                onClick={() => {
+                  setClusterResult(null);
+                  toast("🧹 AI preview dibersihkan.");
+                }}
+                title="Buang AI preview (jika nak buat semula)"
+              >
+                Clear AI Preview
+              </button>
+              <button
+                type="button"
+                style={ui.small}
+                onClick={() => navigate("/board", setPath)}
+              >
+                Kembali /board
               </button>
             </div>
           </div>
 
-          <div style={styles.tip}>
-            Cara guna: (1) Cipta CU → (2) Assign aktiviti kepada CU guna dropdown → (3) Export JSON untuk fasa CPC/CP.
-          </div>
+          {clusterResult ? (
+            <div style={{ ...styles.card, marginTop: 12 }}>
+              <div style={{ fontWeight: 900, marginBottom: 6 }}>
+                AI Cluster Preview (ringkas)
+              </div>
+              <div style={{ fontSize: 13, opacity: 0.85 }}>
+                totalCards: <b>{clusterResult.totalCards ?? "-"}</b>{" "}
+                | clusters: <b>{clusterResult.clusters?.length ?? 0}</b>{" "}
+                | unassigned:{" "}
+                <b>{clusterResult.meta?.unassignedCount ?? "-"}</b>
+              </div>
+
+              <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+                {(clusterResult.clusters || []).slice(0, 5).map((cl, idx) => (
+                  <div
+                    key={cl.clusterId || cl.theme || idx}
+                    style={{ border: "1px solid #eee", borderRadius: 10, padding: 10 }}
+                  >
+                    <div style={{ fontWeight: 900 }}>
+                      {cl.theme || "CU"}{" "}
+                      <span style={{ ...ui.pill, marginLeft: 8 }}>
+                        {cl.count ?? (cl.items?.length || 0)} items
+                      </span>
+                    </div>
+                    <ul style={{ margin: "8px 0 0", paddingLeft: 18 }}>
+                      {(cl.items || []).slice(0, 3).map((it) => (
+                        <li key={it.id ?? it.name}>
+                          {it.name || it.activity || "(no text)"}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+                {(clusterResult.clusters || []).length > 5 ? (
+                  <div style={{ fontSize: 12, opacity: 0.75 }}>
+                    (Dipaparkan 5 cluster teratas sahaja)
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          ) : (
+            <div style={styles.tip}>
+              AI Preview belum ada. Buat dari <b>/board</b> → klik <b>AI Cluster (Preview)</b>.
+            </div>
+          )}
         </div>
       </div>
 
@@ -871,12 +841,17 @@ function ClusterPage() {
                     <div style={{ fontWeight: 800, fontSize: 13, lineHeight: 1.25 }}>
                       {c.activity}
                     </div>
+
                     <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 8, flexWrap: "wrap" }}>
                       <span style={ui.mini}>⏱ {formatTime(c.time)}</span>
                       {cuId ? (
-                        <span style={{ ...ui.pill, background: "#e8f5e9" }}>ASSIGNED: {cuTitle || cuId}</span>
+                        <span style={{ ...ui.pill, background: "#e8f5e9" }}>
+                          ASSIGNED: {cuTitle || cuId}
+                        </span>
                       ) : (
-                        <span style={{ ...ui.pill, background: "#fff8c5" }}>UNASSIGNED</span>
+                        <span style={{ ...ui.pill, background: "#fff8c5" }}>
+                          UNASSIGNED
+                        </span>
                       )}
                     </div>
 
@@ -943,7 +918,7 @@ function ClusterPage() {
                     />
 
                     <div style={{ marginTop: 10, ...ui.mini }}>
-                      (MVP) Assignment dibuat dari senarai aktiviti (kiri). Versi seterusnya kita tambah drag & drop.
+                      (MVP) Assignment dibuat dari senarai aktiviti (kiri). Versi seterusnya: drag & drop.
                     </div>
                   </div>
                 );
@@ -957,14 +932,10 @@ function ClusterPage() {
           <div style={{ fontWeight: 900, marginBottom: 10 }}>Butiran</div>
 
           {!selectedCard ? (
-            <div style={styles.empty}>
-              Klik salah satu aktiviti di sebelah kiri untuk lihat detail.
-            </div>
+            <div style={styles.empty}>Klik aktiviti di sebelah kiri untuk lihat detail.</div>
           ) : (
             <div>
-              <div style={{ ...ui.pill, background: "#f7f7f7" }}>
-                ID: {selectedCard.id}
-              </div>
+              <div style={{ ...ui.pill, background: "#f7f7f7" }}>ID: {selectedCard.id}</div>
 
               <div style={{ marginTop: 10, fontWeight: 900, lineHeight: 1.25 }}>
                 {selectedCard.activity}
@@ -1007,13 +978,11 @@ function ClusterPage() {
   );
 }
 
-
 /**
  * HOME: redirect
  */
 function Home({ setPath }) {
   useEffect(() => {
-    // default pergi ke /panel
     if (window.location.pathname === "/") {
       navigate("/panel", setPath);
     }
@@ -1021,9 +990,7 @@ function Home({ setPath }) {
 
   return (
     <div style={styles.page}>
-      <div style={styles.card}>
-        <div>Redirecting…</div>
-      </div>
+      <div style={styles.card}>Redirecting…</div>
     </div>
   );
 }
@@ -1034,10 +1001,9 @@ function Home({ setPath }) {
 function App() {
   const [path, setPath] = usePath();
 
-  // ✅ GLOBAL: simpan result AI supaya /cluster boleh baca
+  // GLOBAL: simpan result AI supaya /cluster boleh baca
   const [clusterResult, setClusterResult] = useState(null);
 
-  // simple guards
   const clean = (path || "/").replace(/\/+$/, "") || "/";
 
   return (
@@ -1047,13 +1013,18 @@ function App() {
       {clean === "/board" ? (
         <BoardPage setPath={setPath} setClusterResult={setClusterResult} />
       ) : null}
-
       {clean === "/cluster" ? (
-        <ClusterPage setPath={setPath} clusterResult={clusterResult} setClusterResult={setClusterResult} />
+        <ClusterPage
+          setPath={setPath}
+          clusterResult={clusterResult}
+          setClusterResult={setClusterResult}
+        />
       ) : null}
 
-      {/* Jika path lain */}
-      {clean !== "/" && clean !== "/panel" && clean !== "/board" && clean !== "/cluster" ? (
+      {clean !== "/" &&
+      clean !== "/panel" &&
+      clean !== "/board" &&
+      clean !== "/cluster" ? (
         <div style={styles.page}>
           <div style={styles.card}>
             <h2 style={{ marginTop: 0 }}>Page tidak ditemui</h2>
@@ -1080,7 +1051,8 @@ function App() {
  */
 const styles = {
   page: {
-    fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
+    fontFamily:
+      "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
     padding: "24px",
     maxWidth: "1200px",
     margin: "0 auto",
@@ -1139,8 +1111,9 @@ const styles = {
     border: "1px solid #ddd",
     cursor: "pointer",
     fontWeight: 800,
+    background: "#fff",
   },
-  
+
   smallBtn: {
     padding: "8px 10px",
     borderRadius: 10,
@@ -1162,7 +1135,7 @@ const styles = {
   },
 
   tdNew: {
-    background: "#fff8c5", // highlight kuning lembut (aktiviti baru)
+    background: "#fff8c5",
   },
 
   newBadge: {
@@ -1177,7 +1150,6 @@ const styles = {
   },
   error: { marginTop: 10, color: "#b00020", fontSize: 13 },
   success: { marginTop: 10, color: "#0a7a2f", fontSize: 13, fontWeight: 700 },
-  footerNote: { marginTop: 10, fontSize: 12, opacity: 0.75 },
 
   empty: { marginTop: 8, opacity: 0.8 },
   tableWrap: { marginTop: 8, overflowX: "auto" },
@@ -1195,15 +1167,6 @@ const styles = {
 
   cellEmpty: { opacity: 0.12 },
   hint: { marginTop: 12, fontSize: 12, opacity: 0.7 },
-
-  smallLinks: { marginTop: 14, fontSize: 13 },
-  codeBlock: {
-    display: "inline-block",
-    padding: "6px 10px",
-    borderRadius: 10,
-    border: "1px solid #ddd",
-    background: "#f7f7f7",
-  },
 };
 
 createRoot(document.getElementById("root")).render(<App />);
