@@ -481,40 +481,6 @@ useEffect(() => {
       background: "#fff",
       cursor: "pointer",
     }}
-  >
-    + CU Baru
-  </button>
-
-  <button
-    onClick={loadCluster}
-    style={{
-      padding: "10px 12px",
-      borderRadius: 8,
-      border: "1px solid #111",
-      background: "#111",
-      color: "#fff",
-      cursor: "pointer",
-    }}
-  >
-    AI Cluster (Preview)
-  </button>
-          <div style={{ minWidth: 220 }}>
-            <div style={{ fontSize: 12, marginBottom: 6 }}>Tukar Session</div>
-            <input
-              value={sessionId}
-              onChange={(e) => setSessionId(e.target.value)}
-              placeholder="contoh: Masjid"
-              style={{
-                width: "100%",
-                padding: "10px 12px",
-                borderRadius: 8,
-                border: "1px solid #ccc",
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") loadCluster();
-              }}
-            />
-          </div>
 
           <div style={{ minWidth: 260 }}>
             <div style={{ fontSize: 12, marginBottom: 6 }}>Carian Aktiviti</div>
