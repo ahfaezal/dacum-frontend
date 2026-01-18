@@ -574,7 +574,6 @@ useEffect(() => {
               }}
               title="Jana AI cluster preview (REAL)"
             >
-              {loading ? "Menjana..." : "AI Cluster (Preview)"}
             </button>
 
             <button
