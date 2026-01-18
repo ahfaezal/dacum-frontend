@@ -107,13 +107,21 @@ function PanelPage() {
   const [minClusterSize, setMinClusterSize] = useState(2);
 
 {/* =========================
-    AI Cluster Panel (UI)
+    AI Cluster Panel (UI) - sementara (no-run) supaya /panel tidak crash
    ========================= */}
-<div style={{ marginTop: 16, padding: 12, border: "1px solid #ddd", borderRadius: 12 }}>
+<div
+  style={{
+    marginTop: 16,
+    padding: 12,
+    border: "1px solid #ddd",
+    borderRadius: 12,
+    background: "#fafafa",
+  }}
+>
   <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-    <strong>Cluster Result</strong>
+    <strong>AI Cluster (Preview)</strong>
 
-    <label explainedby="" style={{ display: "flex", gap: 6, alignItems: "center" }}>
+    <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
       Threshold:
       <input
         type="number"
@@ -121,7 +129,7 @@ function PanelPage() {
         min="0"
         max="1"
         value={similarityThreshold}
-        onChange={(e) => setSimilarityThreshold(e.target.value)}
+        onChange={(e) => setSimilarityThreshold(parseFloat(e.target.value || "0"))}
         style={{ width: 90 }}
       />
     </label>
@@ -134,13 +142,15 @@ function PanelPage() {
         min="2"
         max="20"
         value={minClusterSize}
-        onChange={(e) => setMinClusterSize(e.target.value)}
+        onChange={(e) => setMinClusterSize(parseInt(e.target.value || "2", 10))}
         style={{ width: 70 }}
       />
     </label>
 
-    <button onClick={runClusterPreview} disabled={clusterLoading}>
-      Run
+    {/* BUTANG RUN dimatikan sementara supaya /panel tak crash.
+        Clustering akan dibuat di /cluster atau button di /board. */}
+    <button disabled title="Sementara ini clustering dibuat di /cluster">
+      Run (disabled)
     </button>
 
     {clusterResult?.totalCards != null && (
@@ -156,71 +166,12 @@ function PanelPage() {
     )}
   </div>
 
-  {clusterError ? (
-    <div style={{ marginTop: 10, color: "crimson" }}>
-      <b>Error:</b> {clusterError}
-    </div>
-  ) : null}
+  <div style={{ marginTop: 10, opacity: 0.75, lineHeight: 1.4 }}>
+    Nota: Panel ini untuk input kad. Clustering akan dijalankan di halaman <b>/cluster</b> (atau
+    melalui button di <b>/board</b>) supaya aliran kerja lebih kemas.
+  </div>
+</div>
 
-  {!clusterResult ? (
-    <div style={{ marginTop: 10, opacity: 0.75 }}>
-      Klik <b>Run</b> untuk lihat cluster dalam UI.
-    </div>
-  ) : (
-    <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "2fr 1fr", gap: 12 }}>
-      {/* LEFT: clusters */}
-      <div>
-        <div style={{ fontWeight: 700, marginBottom: 8 }}>
-          Clusters ({clusterResult?.clusters?.length || 0})
-        </div>
-
-        {(clusterResult?.clusters || []).length === 0 ? (
-          <div style={{ opacity: 0.8 }}>
-            Tiada cluster terbentuk (cuba turunkan threshold atau kecilkan min size).
-          </div>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {(clusterResult.clusters || []).map((cl) => (
-              <div
-                key={cl.clusterId || cl.theme}
-                style={{
-                  border: "1px solid #e5e5e5",
-                  borderRadius: 12,
-                  padding: 10,
-                }}
-              >
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
-                  <div>
-                    <div style={{ fontWeight: 700 }}>
-                      {cl.theme || "CU"}
-                    </div>
-                    <div style={{ opacity: 0.75, fontSize: 12 }}>
-                      {cl.clusterId ? `ID: ${cl.clusterId}` : ""}
-                    </div>
-                  </div>
-
-                  <div style={{ textAlign: "right" }}>
-                    <div>
-                      <b>{cl.count ?? (cl.items?.length || 0)}</b> items
-                    </div>
-                    <div style={{ fontSize: 12, opacity: 0.8 }}>
-                      strength: <b>{cl.strength || "-"}</b>
-                    </div>
-                  </div>
-                </div>
-
-                <ul style={{ margin: "10px 0 0", paddingLeft: 18 }}>
-                  {(cl.items || []).map((it) => (
-                    <li key={it.id ?? it.name}>
-                      {it.name || it.activity || "(no text)"}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
 
       {/* RIGHT: unassigned */}
       <div>
