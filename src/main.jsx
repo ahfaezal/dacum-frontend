@@ -323,7 +323,7 @@ function BoardPage({ setPath, setClusterResult }) {
       const sid = (sessionId || "").trim();
       if (!sid) throw new Error("Session ID kosong.");
 
-      const res = await fetch(`${API_BASE}/api/cluster/preview`, {
+      const res = await fetch(`${API_BASE}/api/cluster/run`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sessionId: sid }),
