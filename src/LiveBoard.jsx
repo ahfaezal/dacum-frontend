@@ -16,10 +16,17 @@ export default function LiveBoard({ onAgreed }) {
   function goAgreed() {
     const sid = String(sessionId || "").trim();
     if (!sid) return alert("Sila isi Session dulu.");
-    onAgreed?.(sid); // ✅ serah navigation kepada App.jsx (hash routing)
+    onAgreed?.(sid);
   }
 
-  // Poll ringkas untuk papar “live card”
+  async function refreshCards(sid) {
+    try {
+      const r = await fetch(`${apiBase}/api/cards/${encodeURIComponent(sid)}`);
+      const j = await r.json();
+      if (j && j.ok && Array.isArray(j.items)) setCards(j.items);
+    } catch (e) {}
+  }
+
   useEffect(() => {
     let alive = true;
 
@@ -27,14 +34,7 @@ export default function LiveBoard({ onAgreed }) {
       if (!alive) return;
       const sid = String(sessionId || "").trim();
       if (!sid) return;
-
-      try {
-        const r = await fetch(`${apiBase}/api/cards/${encodeURIComponent(sid)}`);
-        const j = await r.json();
-        if (j && j.ok && Array.isArray(j.items)) setCards(j.items);
-      } catch (e) {
-        // diam
-      }
+      await refreshCards(sid);
     }
 
     tick();
@@ -44,11 +44,12 @@ export default function LiveBoard({ onAgreed }) {
       alive = false;
       clearInterval(t);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [apiBase, sessionId]);
 
   return (
     <div style={{ padding: 20, maxWidth: 1200, margin: "0 auto" }}>
-      <h1 style={{ marginTop: 0 }}>Live Board (DACUM Card)</h1>
+      <h1 style={{ marginTop: 0 }}>Live Board (DACUM Card) — Fasilitator</h1>
 
       <div style={{ fontSize: 13, color: "#555", marginBottom: 10 }}>
         Status: <strong>connected</strong> | API: <code>{apiBase}</code> | Session:{" "}
@@ -82,18 +83,21 @@ export default function LiveBoard({ onAgreed }) {
               color: "#fff",
               cursor: "pointer",
             }}
-            title="Pergi terus ke paparan clustering"
+            title="Bila semua ahli panel selesai input, klik untuk ke paparan Clustering"
           >
-            Agreed
+            Agreed (Ke Clustering)
           </button>
         </div>
 
-        <div style={{ marginTop: 12, fontSize: 12, color: "#666" }}>
-          Tip: Panel isi input di Live Board. Bila “Agreed”, fasilitator pindah ke paparan Clustering.
+        <div style={{ marginTop: 10, fontSize: 12, color: "#666" }}>
+          Nota: Ahli panel buat input melalui paparan “Panel Input”. Fasilitator pantau kad di sini dan klik “Agreed”
+          apabila semua input selesai.
         </div>
       </div>
 
       <div style={{ marginTop: 14, border: "1px solid #ddd", borderRadius: 12, padding: 12, background: "#fff" }}>
+        <div style={{ fontWeight: 800, marginBottom: 10 }}>SENARAI KAD (LIVE)</div>
+
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10 }}>
           {cards.map((c) => (
             <div key={String(c.id)} style={{ border: "1px solid #eee", borderRadius: 12, padding: 10 }}>
@@ -106,7 +110,7 @@ export default function LiveBoard({ onAgreed }) {
 
           {cards.length === 0 ? (
             <div style={{ gridColumn: "1 / -1", color: "#777", fontSize: 13 }}>
-              Belum ada kad untuk session ini (atau endpoint `/api/cards/:sessionId` belum wujud).
+              Belum ada kad untuk session ini (atau endpoint `/api/cards/:sessionId` belum wujud / tiada data).
             </div>
           ) : null}
         </div>
