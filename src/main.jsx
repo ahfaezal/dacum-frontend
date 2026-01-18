@@ -103,6 +103,8 @@ function PanelPage() {
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
   const [clusterResult, setClusterResult] = useState(null);
+  const [similarityThreshold, setSimilarityThreshold] = useState(0.55);
+  const [minClusterSize, setMinClusterSize] = useState(2);
 
 {/* =========================
     AI Cluster Panel (UI)
