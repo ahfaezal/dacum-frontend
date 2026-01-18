@@ -59,6 +59,7 @@ function useCards(sessionId) {
   const [status, setStatus] = useState("checking...");
   const [error, setError] = useState("");
   const lastJsonRef = useRef("");
+  const [view, setView] = useState("board");
 
   async function fetchCards() {
     const sid = (sessionId || "").trim();
