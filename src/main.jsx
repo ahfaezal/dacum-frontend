@@ -1081,6 +1081,9 @@ function Home({ setPath }) {
 function App() {
   const [path, setPath] = usePath();
 
+  // ✅ GLOBAL: simpan result AI supaya /cluster boleh baca
+  const [clusterResult, setClusterResult] = useState(null);
+
   // simple guards
   const clean = (path || "/").replace(/\/+$/, "") || "/";
 
@@ -1088,8 +1091,13 @@ function App() {
     <>
       {clean === "/" ? <Home setPath={setPath} /> : null}
       {clean === "/panel" ? <PanelPage /> : null}
-      {clean === "/board" ? <BoardPage /> : null}
-      {clean === "/cluster" ? <ClusterPage /> : null}
+      {clean === "/board" ? (
+        <BoardPage setPath={setPath} setClusterResult={setClusterResult} />
+      ) : null}
+
+      {clean === "/cluster" ? (
+        <ClusterPage setPath={setPath} clusterResult={clusterResult} setClusterResult={setClusterResult} />
+      ) : null}
 
       {/* Jika path lain */}
       {clean !== "/" && clean !== "/panel" && clean !== "/board" && clean !== "/cluster" ? (
