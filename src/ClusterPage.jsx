@@ -678,11 +678,11 @@ useEffect(() => {
             {data?.generatedAt ? (
               <>
                 Generated: <code>{data.generatedAt}</code>{" "}
-                <span style={{ color: "#888" }}>
-                  (params: thr={params.similarityThreshold ?? similarityThreshold}, min=
-                  {params.minClusterSize ?? minClusterSize}, max=
-                  {params.maxClusters ?? maxClusters})
-                </span>
+          <span style={{ color: "#888" }}>
+            (params: thr=<code>{params.similarityThreshold ?? similarityThreshold}</code>,{" "}
+            min=<code>{params.minClusterSize ?? minClusterSize}</code>,{" "}
+            max=<code>{params.maxClusters ?? maxClusters}</code>)
+          </span>
               </>
             ) : (
               <span>
