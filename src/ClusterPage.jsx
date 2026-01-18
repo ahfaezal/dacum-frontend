@@ -13,7 +13,8 @@ export default function ClusterPage() {
   // =========================
   // Session + tuning params
   // =========================
-  const [sessionId, setSessionId] = useState("Masjid");
+  export default function ClusterPage({ initialSessionId = "Masjid", onBack }) {
+  const [sessionId, setSessionId] = useState(initialSessionId);
   const [similarityThreshold, setSimilarityThreshold] = useState(0.55);
   const [minClusterSize, setMinClusterSize] = useState(2);
   const [maxClusters, setMaxClusters] = useState(12);
@@ -449,6 +450,47 @@ useEffect(() => {
         }}
       >
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "end" }}>
+          {onBack ? (
+    <button
+      onClick={onBack}
+      style={{
+        padding: "10px 12px",
+        borderRadius: 8,
+        border: "1px solid #ccc",
+        background: "#fff",
+        cursor: "pointer",
+      }}
+    >
+      ← Back
+    </button>
+  ) : null}
+
+  <button
+    onClick={createNewCU}
+    style={{
+      padding: "10px 12px",
+      borderRadius: 8,
+      border: "1px solid #ccc",
+      background: "#fff",
+      cursor: "pointer",
+    }}
+  >
+    + CU Baru
+  </button>
+
+  <button
+    onClick={loadCluster}
+    style={{
+      padding: "10px 12px",
+      borderRadius: 8,
+      border: "1px solid #111",
+      background: "#111",
+      color: "#fff",
+      cursor: "pointer",
+    }}
+  >
+    AI Cluster (Preview)
+  </button>
           <div style={{ minWidth: 220 }}>
             <div style={{ fontSize: 12, marginBottom: 6 }}>Tukar Session</div>
             <input
