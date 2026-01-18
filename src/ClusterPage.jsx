@@ -18,6 +18,12 @@ export default function ClusterPage() {
   const [similarityThreshold, setSimilarityThreshold] = useState(0.55);
   const [minClusterSize, setMinClusterSize] = useState(2);
   const [maxClusters, setMaxClusters] = useState(12);
+  // Auto ambil session dari URL (?session=Masjid)
+  useEffect(() => {
+    const sp = new URLSearchParams(window.location.search);
+    const s = sp.get("session");
+    if (s) setSessionId(String(s));
+  }, []);
 
   // =========================
   // Data + UI state
