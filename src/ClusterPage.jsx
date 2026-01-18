@@ -3,6 +3,11 @@ import React, { useEffect, useRef, useState, useMemo } from "react";
 const API_BASE =
   import.meta.env.VITE_API_BASE || "https://dacum-backend.onrender.com";
 
+const apiBase = String(API_BASE || "")
+  .trim()
+  .replace("onrenderer.com", "onrender.com")
+  .replace(/\/+$/, "");
+
   // =========================
   // Session + tuning params
   // =========================
