@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from "react";
 import ClusterPage from "./ClusterPage.jsx";
 import LiveBoard from "./LiveBoard.jsx";
+import PanelPage from "./PanelPage.jsx";
 
 function parseHash() {
   // contoh:
   // #/board
+  // #/panel
   // #/cluster?session=Masjid
   const h = String(window.location.hash || "#/board");
   const [pathPart, qs] = h.replace(/^#/, "").split("?");
@@ -19,18 +21,31 @@ export default function App() {
   useEffect(() => {
     const onChange = () => setRoute(parseHash());
     window.addEventListener("hashchange", onChange);
+
+    // pastikan ada default hash
+    if (!window.location.hash) window.location.hash = "#/board";
+
     return () => window.removeEventListener("hashchange", onChange);
   }, []);
 
   const goBoard = () => (window.location.hash = "#/board");
+  const goPanel = () => (window.location.hash = "#/panel");
   const goCluster = (sessionId) =>
-    (window.location.hash = `#/cluster?session=${encodeURIComponent(sessionId || "")}`);
+    (window.location.hash = `#/cluster?session=${encodeURIComponent(
+      sessionId || ""
+    )}`);
 
+  // PANEL (handphone) - input kad sahaja
+  if (path === "/panel") {
+    return <PanelPage />;
+  }
+
+  // CLUSTER (fasilitator selepas Agreed)
   if (path === "/cluster") {
     const sid = params.get("session") || "Masjid";
     return <ClusterPage initialSessionId={sid} onBack={goBoard} />;
   }
 
-  // default board
-  return <LiveBoard onAgreed={(sid) => goCluster(sid)} />;
+  // DEFAULT: LIVE BOARD (fasilitator)
+  return <LiveBoard onAgreed={(sid) => goCluster(sid)} goPanel={goPanel} />;
 }
