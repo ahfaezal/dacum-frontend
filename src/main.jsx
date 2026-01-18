@@ -437,55 +437,54 @@ function BoardPage({ setPath, setClusterResult }) {
         </div>
       </div>
 
-      <div style={styles.card}>
-        {displayCards.length === 0 ? (
-          <div style={styles.empty}>Belum ada aktiviti. Panel boleh mula hantar.</div>
-        ) : (
-          <div style={styles.tableWrap}>
-            <table style={styles.table}>
-              <tbody>
-                {rows.map((row, rIdx) => (
-                  <tr key={rIdx}>
-                    {Array.from({ length: COLUMNS }).map((_, cIdx) => {
-                      const item = row[cIdx];
-                      const isNew = item && newMap[item.id] && newMap[item.id] > Date.now();
+<div style={styles.card}>
+  {displayCards.length === 0 ? (
+    <div style={styles.empty}>Belum ada aktiviti. Panel boleh mula hantar.</div>
+  ) : (
+    <div style={styles.tableWrap}>
+      <table style={styles.table}>
+        <tbody>
+          {rows.map((row, rIdx) => (
+            <tr key={rIdx}>
+              {Array.from({ length: COLUMNS }).map((_, cIdx) => {
+                const item = row[cIdx];
+                const isNew = item && newMap[item.id] && newMap[item.id] > Date.now();
 
-                      return (
-                        <td
-                          key={cIdx}
-                          style={{
-                            ...styles.td,
-                            ...(isNew ? styles.tdNew : null),
-                          }}
-                        >
-                          {item ? (
-                            <div>
-                              <div style={styles.cellText}>{item.activity}</div>
-                              <div style={styles.cellMeta}>
-                                <span style={styles.timeOnly}>{formatTime(item.time)}</span>
-                                {isNew ? <span style={styles.newBadge}>BARU</span> : null}
-                              </div>
-                            </div>
-                          ) : (
-                            <div style={styles.cellEmpty}>&nbsp;</div>
-                          )}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+                return (
+                  <td
+                    key={cIdx}
+                    style={{
+                      ...styles.td,
+                      ...(isNew ? styles.tdNew : null),
+                    }}
+                  >
+                    {item ? (
+                      <div>
+                        <div style={styles.cellText}>{item.activity}</div>
+                        <div style={styles.cellMeta}>
+                          <span style={styles.timeOnly}>{formatTime(item.time)}</span>
+                          {isNew ? <span style={styles.newBadge}>BARU</span> : null}
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={styles.cellEmpty}>&nbsp;</div>
+                    )}
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )}
 
-        <div style={styles.hint}>
-          Tip: Ini paparan “raw + timestamp” (belum grouping). Klustering CU dibuat selepas cukup input.
-        </div>
+  <div style={styles.hint}>
+    Tip: Ini paparan “raw + timestamp” (belum grouping). Klustering CU dibuat selepas cukup input.
       </div>
     </div>
   );
-}
+}  
 
 /**
  * CLUSTER VIEW (MVP) — Klustering Aktiviti → CU (Manual by Fasilitator)
@@ -754,17 +753,19 @@ function ClusterPage({ clusterResult }) {
           {err ? <div style={styles.error}>⚠ {err}</div> : null}
           {msg ? <div style={styles.success}>{msg}</div> : null}
 
-          {clusterResult ? (
-            <div style={{ marginTop: 10, ...styles.card, borderStyle: "dashed" }}>
-              <div style={{ fontWeight: 900, marginBottom: 6 }}>AI Cluster Preview (data mentah)</div>
-              <div style={{ fontSize: 12, opacity: 0.8 }}>
-                Nota: Ini preview sahaja. Fasilitator masih buat keputusan akhir.
-              </div>
-              <pre style={{ marginTop: 10, fontSize: 12, overflowX: "auto" }}>
-                {JSON.stringify(clusterResult, null, 2)}
-              </pre>
-            </div>
-          ) : null}
+{clusterResult && (
+  <div style={{ marginTop: 10, ...styles.card, borderStyle: "dashed" }}>
+    <div style={{ fontWeight: 900, marginBottom: 6 }}>
+      AI Cluster Preview (data mentah)
+    </div>
+    <div style={{ fontSize: 12, opacity: 0.8 }}>
+      Nota: Ini preview sahaja. Fasilitator masih buat keputusan akhir.
+    </div>
+    <pre style={{ marginTop: 10, fontSize: 12, overflow: "auto" }}>
+      {JSON.stringify(clusterResult, null, 2)}
+    </pre>
+  </div>
+)}
 
           <div style={ui.topBar}>
             <div style={{ minWidth: 240 }}>
