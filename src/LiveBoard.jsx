@@ -1,11 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
 
 const API_BASE =
   import.meta.env.VITE_API_BASE || "https://dacum-backend.onrender.com";
 
 export default function LiveBoard({ onAgreed }) {
-  const navigate = useNavigate();
 
   const apiBase = useMemo(() => {
     const v = String(API_BASE || "").trim();
@@ -26,10 +24,6 @@ export default function LiveBoard({ onAgreed }) {
     } catch (e) {
       // diam
     }
-
-    // Ini yang buat pergi ke /cluster
-    navigate(`/cluster?session=${encodeURIComponent(sid)}`);
-  }
 
   // Poll ringkas untuk papar “live card”
   useEffect(() => {
