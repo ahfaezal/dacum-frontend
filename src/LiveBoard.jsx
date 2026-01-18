@@ -1,9 +1,12 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 const API_BASE =
   import.meta.env.VITE_API_BASE || "https://dacum-backend.onrender.com";
 
 export default function LiveBoard({ onAgreed }) {
+  const navigate = useNavigate();
+
   const apiBase = useMemo(() => {
     const v = String(API_BASE || "").trim();
     if (!v) return "https://dacum-backend.onrender.com";
@@ -12,6 +15,21 @@ export default function LiveBoard({ onAgreed }) {
 
   const [sessionId, setSessionId] = useState("Masjid");
   const [cards, setCards] = useState([]);
+
+  function goAgreed() {
+    const sid = String(sessionId || "").trim();
+    if (!sid) return alert("Sila isi Session dulu.");
+
+    // Kalau anda masih nak kekalkan callback parent (optional)
+    try {
+      onAgreed?.(sid);
+    } catch (e) {
+      // diam
+    }
+
+    // Ini yang buat pergi ke /cluster
+    navigate(`/cluster?session=${encodeURIComponent(sid)}`);
+  }
 
   // Poll ringkas untuk papar “live card”
   useEffect(() => {
@@ -23,8 +41,6 @@ export default function LiveBoard({ onAgreed }) {
       if (!sid) return;
 
       try {
-        // Jika backend anda ada endpoint ini:
-        // GET /api/cards/:sessionId  -> return { ok:true, items:[{id,name,time}] }
         const r = await fetch(`${apiBase}/api/cards/${encodeURIComponent(sid)}`);
         const j = await r.json();
         if (j && j.ok && Array.isArray(j.items)) setCards(j.items);
@@ -49,9 +65,7 @@ export default function LiveBoard({ onAgreed }) {
       <div style={{ fontSize: 13, color: "#555", marginBottom: 10 }}>
         Status: <strong>connected</strong> | API: <code>{apiBase}</code> | Session:{" "}
         <strong>{String(sessionId || "").trim() || "-"}</strong>{" "}
-        <span style={{ marginLeft: 10 }}>
-          LIVE
-        </span>
+        <span style={{ marginLeft: 10 }}>LIVE</span>
       </div>
 
       <div style={{ border: "1px solid #ddd", borderRadius: 12, padding: 12, background: "#fff" }}>
@@ -71,7 +85,7 @@ export default function LiveBoard({ onAgreed }) {
 
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
           <button
-            onClick={() => onAgreed?.(sessionId)}
+            onClick={goAgreed}
             style={{
               padding: "10px 12px",
               borderRadius: 10,
@@ -80,7 +94,7 @@ export default function LiveBoard({ onAgreed }) {
               color: "#fff",
               cursor: "pointer",
             }}
-            title="Bawa panel ke paparan clustering"
+            title="Pergi terus ke paparan clustering"
           >
             Agreed
           </button>
