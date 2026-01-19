@@ -1,13 +1,13 @@
 import React, { useEffect, useRef, useState, useMemo } from "react";
 
-const rawBase =
-  (import.meta?.env?.VITE_API_BASE && String(import.meta.env.VITE_API_BASE)) ||
-  "https://dacum-backend.onrender.com";
+const API_BASE =
+  import.meta.env.VITE_API_BASE || "https://dacum-backend.onrender.com";
 
-const apiBase = String(rawBase || "")
+// Normalisasi base URL (buang space & slash hujung) — jangan tukar domain
+const apiBase = String(API_BASE || "")
   .trim()
   .replace(/\s+/g, "")
-  .replace("onrenderer.com", "onrender.com");
+  .replace(/\/+$/, "");
 
   // =========================
   // Session + tuning params
