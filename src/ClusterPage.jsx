@@ -125,18 +125,18 @@ const abortRef = useRef(null);
     return n;
   }, [assignments]);
 
-  const filteredCards = useMemo(() => {
-    const q = String(query || "").toLowerCase().trim();
+const filteredCards = useMemo(() => {
+  const q = String(query || "").toLowerCase().trim();
 
-    return aiCards.filter((c) => {
-      const isAssigned = Boolean(assignments[String(c.id)]);
-      if (filter === "assigned" && !isAssigned) return false;
-      if (filter === "unassigned" && isAssigned) return false;
+  return rawCards.filter((c) => {
+    const isAssigned = Boolean(assignments[String(c.id)]);
+    if (filter === "assigned" && !isAssigned) return false;
+    if (filter === "unassigned" && isAssigned) return false;
 
-      if (!q) return true;
-      return String(c.activity || "").toLowerCase().includes(q);
-    });
-  }, [aiCards, assignments, filter, query]);
+    if (!q) return true;
+    return String(c.activity || "").toLowerCase().includes(q);
+  });
+}, [rawCards, assignments, filter, query]);
 
   function buildExportJson() {
     const cuMap = new Map(cus.map((c) => [c.id, c.title]));
@@ -175,6 +175,10 @@ const abortRef = useRef(null);
     }
   }
 
+useEffect(() => {
+  loadRawCards();
+}, [sessionId]);
+    
 // =========================
 // LIVE refresh (polling) - SESSION SUMMARY SAHAJA
 // (Tidak panggil /api/cluster/preview supaya tak "auto preview")
@@ -781,7 +785,7 @@ useEffect(() => {
           >
             <strong>Aktiviti Mentah ({filteredCards.length})</strong>
             <span style={{ fontSize: 12, color: "#888" }}>
-              (Total: {aiCards.length})
+              (Total: {rawCards.length})
             </span>
           </div>
 
@@ -797,7 +801,7 @@ useEffect(() => {
               <div style={{ fontSize: 13, color: "#666" }}>
                 Tiada aktiviti untuk filter/carian ini.
                 <div style={{ marginTop: 8, color: "#888" }}>
-                  Jika belum jana AI: klik <strong>AI Cluster (Preview)</strong>.
+                  Jika kad belum muncul, semak Session dan pastikan Live Board sudah ada kad.: klik <strong>AI Cluster (Preview)</strong>.
                 </div>
               </div>
             ) : null}
