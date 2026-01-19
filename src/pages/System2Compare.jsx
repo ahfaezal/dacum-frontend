@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 
 const API_BASE =
   (import.meta?.env?.VITE_API_BASE && String(import.meta.env.VITE_API_BASE)) ||
@@ -17,7 +17,6 @@ function safeNumber(x, fallback = 0) {
 }
 
 function pct(x) {
-  // kalau score 0..1 -> paparkan %
   const n = Number(x);
   if (!Number.isFinite(n)) return "";
   if (n <= 1) return `${Math.round(n * 100)}%`;
@@ -32,8 +31,8 @@ export default function System2Compare() {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
 
-  // hasil compare dari backend
-  const [data, setData] = useState([]);
+  // ✅ hasil compare dari backend (normalized)
+  const [results, setResults] = useState([]);
 
   // hydrate sessionId dari query string (hash)
   useEffect(() => {
@@ -43,7 +42,7 @@ export default function System2Compare() {
   }, []);
 
   const decidedCount = 0; // STEP 2 nanti baru ada decision
-  const itemCount = results?.length || 0;
+  const itemCount = results.length;
 
   async function runCompare() {
     setLoading(true);
@@ -67,13 +66,11 @@ export default function System2Compare() {
         throw new Error(json?.error || json?.detail || "Compare gagal");
       }
 
-      // ✅ BACKEND PULANG ARRAY TERUS
+      // ✅ Backend pulang ARRAY terus
       const items = Array.isArray(json) ? json : [];
-      setResults(items);
-      setErr("");
 
-      // Normalise (pastikan field wujud)
-      const normalized = (items || []).map((it, idx) => ({
+      // ✅ Normalise (pastikan field wujud & konsisten)
+      const normalized = items.map((it, idx) => ({
         id: it?.id ?? `${Date.now()}_${idx}`,
         myspikeWA: String(it?.myspikeWA ?? it?.myspike ?? "").trim(),
         bestDacumWA: String(it?.bestDacumWA ?? it?.best ?? "").trim(),
@@ -83,6 +80,7 @@ export default function System2Compare() {
       }));
 
       setResults(normalized);
+
       if (!normalized.length) {
         setErr(
           "Tiada item dipulangkan oleh backend. Semak seed WA & MySPIKE index."
@@ -119,8 +117,8 @@ export default function System2Compare() {
     <div style={{ padding: 24, maxWidth: 1100, margin: "0 auto" }}>
       <h1 style={{ marginTop: 0 }}>Sistem 2 — MySPIKE Compare (Page 2.2)</h1>
       <p style={{ marginTop: 6, color: "#444" }}>
-        Sistem bandingkan WA sebenar (DACUM) ↔ WA MySPIKE. Panel tentukan keputusan{" "}
-        <b>ADA / TIADA</b>.
+        Sistem bandingkan WA sebenar (DACUM) ↔ WA MySPIKE. Panel tentukan
+        keputusan <b>ADA / TIADA</b>.
       </p>
 
       {/* Controls */}
@@ -236,9 +234,7 @@ export default function System2Compare() {
           >
             Tiada item untuk dibandingkan. Pastikan:
             <ul style={{ marginTop: 8 }}>
-              <li>
-                Anda sudah seed WA dari Page 2.1 (Sahkan &amp; Teruskan).
-              </li>
+              <li>Anda sudah seed WA dari Page 2.1 (Sahkan &amp; Teruskan).</li>
               <li>
                 MySPIKE index telah dibina (jika compare bergantung pada index).
               </li>
@@ -284,16 +280,16 @@ export default function System2Compare() {
                 </div>
 
                 <div style={{ marginTop: 14 }}>
-                  <div style={{ fontWeight: 700 }}>
-                    Cadangan DACUM (Best Match)
-                  </div>
+                  <div style={{ fontWeight: 700 }}>Cadangan DACUM (Best Match)</div>
                   <div style={{ marginTop: 6, color: "#222" }}>
                     {r.bestDacumWA || <i>(tiada)</i>}
                   </div>
                 </div>
 
                 <div style={{ marginTop: 14 }}>
-                  <div style={{ fontWeight: 700 }}>Top {topK} Calon DACUM</div>
+                  <div style={{ fontWeight: 700 }}>
+                    Top {safeNumber(topK, 5)} Calon DACUM
+                  </div>
                   <div style={{ marginTop: 8 }}>
                     {(r.topK || []).length ? (
                       <table
@@ -337,38 +333,42 @@ export default function System2Compare() {
                           </tr>
                         </thead>
                         <tbody>
-                          {r.topK.slice(0, safeNumber(topK, 5)).map((t, i) => (
-                            <tr key={i}>
-                              <td
-                                style={{
-                                  padding: 10,
-                                  borderBottom: "1px solid #f2f2f2",
-                                  color: "#666",
-                                }}
-                              >
-                                {i + 1}
-                              </td>
-                              <td
-                                style={{
-                                  padding: 10,
-                                  borderBottom: "1px solid #f2f2f2",
-                                  color: "#222",
-                                }}
-                              >
-                                {String(t?.dacumWA || "").trim() || <i>(tiada)</i>}
-                              </td>
-                              <td
-                                style={{
-                                  padding: 10,
-                                  borderBottom: "1px solid #f2f2f2",
-                                  textAlign: "right",
-                                  fontWeight: 700,
-                                }}
-                              >
-                                {pct(t?.score)}
-                              </td>
-                            </tr>
-                          ))}
+                          {r.topK
+                            .slice(0, safeNumber(topK, 5))
+                            .map((t, i) => (
+                              <tr key={i}>
+                                <td
+                                  style={{
+                                    padding: 10,
+                                    borderBottom: "1px solid #f2f2f2",
+                                    color: "#666",
+                                  }}
+                                >
+                                  {i + 1}
+                                </td>
+                                <td
+                                  style={{
+                                    padding: 10,
+                                    borderBottom: "1px solid #f2f2f2",
+                                    color: "#222",
+                                  }}
+                                >
+                                  {String(t?.dacumWA || "").trim() || (
+                                    <i>(tiada)</i>
+                                  )}
+                                </td>
+                                <td
+                                  style={{
+                                    padding: 10,
+                                    borderBottom: "1px solid #f2f2f2",
+                                    textAlign: "right",
+                                    fontWeight: 700,
+                                  }}
+                                >
+                                  {pct(t?.score)}
+                                </td>
+                              </tr>
+                            ))}
                         </tbody>
                       </table>
                     ) : (
