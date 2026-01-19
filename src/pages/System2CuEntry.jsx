@@ -178,14 +178,16 @@ export default function System2CuEntry() {
       return;
     }
 
-    // Save draft before navigate
-    saveDraft();
-
     // Navigate ke page comparison (kita buat selepas ini)
     // Jika app guna HashRouter, URL jadi /#/s2/compare?session=Masjid
-    const url = `/#/s2/compare?session=${encodeURIComponent(meta.sessionId)}`;
-    window.location.href = url;
-  }
+    function confirmAndContinue() {
+    // 1. Simpan draf dahulu
+      saveDraft();
+
+    // 2. Pergi ke Page 2.2 – CU Basket Comparator
+    const sid = meta.sessionId || "Masjid";
+    window.location.hash = `#/s2/compare?session=${encodeURIComponent(sid)}`;
+    }
 
   const totalActivities = useMemo(
     () => cus.reduce((sum, c) => sum + (c.activities?.length || 0), 0),
