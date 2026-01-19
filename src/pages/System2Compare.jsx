@@ -1,29 +1,27 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 
 const API_BASE =
   (import.meta?.env?.VITE_API_BASE && String(import.meta.env.VITE_API_BASE)) ||
   "https://dacum-backend.onrender.com";
 
-// localStorage safe wrapper
-function lsGet(key) {
-  try {
-    return localStorage.getItem(key);
-  } catch {
-    return null;
-  }
-}
-function lsSet(key, val) {
-  try {
-    localStorage.setItem(key, val);
-  } catch {}
+function parseHash() {
+  const h = String(window.location.hash || "#/s2/compare");
+  const [, qs] = h.replace(/^#/, "").split("?");
+  const params = new URLSearchParams(qs || "");
+  return params;
 }
 
-// Ambil query params dari hash: #/s2/compare?session=Masjid
-function getHashParams() {
-  const h = String(window.location.hash || "");
-  const parts = h.split("?");
-  const qs = parts[1] || "";
-  return new URLSearchParams(qs);
+function safeNumber(x, fallback = 0) {
+  const n = Number(x);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function pct(x) {
+  // kalau score 0..1 -> paparkan %
+  const n = Number(x);
+  if (!Number.isFinite(n)) return "";
+  if (n <= 1) return `${Math.round(n * 100)}%`;
+  return `${Math.round(n)}%`;
 }
 
 export default function System2Compare() {
@@ -33,321 +31,360 @@ export default function System2Compare() {
 
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
-  const [data, setData] = useState(null);
 
-  // keputusan human: localWaId -> "ADA"|"TIADA"
-  const [decisions, setDecisions] = useState({});
+  // hasil compare dari backend
+  const [results, setResults] = useState([]);
 
-  // init sessionId dari hash + load decisions cache
+  // hydrate sessionId dari query string (hash)
   useEffect(() => {
-    const params = getHashParams();
-    const sid = params.get("session") || "Masjid";
-    setSessionId(sid);
-
-    const cached = lsGet(`inoss:s2:compare:decisions:${sid}`);
-    if (cached) {
-      try {
-        setDecisions(JSON.parse(cached) || {});
-      } catch {}
-    }
+    const params = parseHash();
+    const sid = params.get("session");
+    if (sid) setSessionId(String(sid));
   }, []);
 
-  // bila sessionId berubah, simpan decisions cache
-  useEffect(() => {
-    lsSet(`inoss:s2:compare:decisions:${sessionId}`, JSON.stringify(decisions));
-  }, [sessionId, decisions]);
+  const decidedCount = 0; // STEP 2 nanti baru ada decision
+  const itemCount = results?.length || 0;
 
   async function runCompare() {
-    setErr("");
     setLoading(true);
-    try {
-      const sid = String(sessionId || "").trim();
-      if (!sid) throw new Error("Session ID kosong.");
+    setErr("");
+    setResults([]);
 
+    try {
       const res = await fetch(`${API_BASE}/api/myspike/compare`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          sessionId: sid,
-          threshold: Number(threshold),
-          topK: Number(topK),
+          sessionId: String(sessionId || "").trim() || "Masjid",
+          threshold: safeNumber(threshold, 0.55),
+          topK: safeNumber(topK, 5),
         }),
       });
 
       const json = await res.json().catch(() => ({}));
-      if (!res.ok || json?.ok === false) {
-        throw new Error(json?.error || `Compare gagal (HTTP ${res.status})`);
+      if (!res.ok) {
+        throw new Error(json?.error || json?.detail || "Compare gagal");
       }
 
-      setData(json);
+      // Backend anda mungkin pulang dalam bentuk:
+      // 1) { ok:true, items:[...] }
+      // 2) { items:[...] }
+      // 3) [ ... ]
+      const items =
+        Array.isArray(json) ? json : Array.isArray(json?.items) ? json.items : [];
+
+      // Normalise (pastikan field wujud)
+      const normalized = (items || []).map((it, idx) => ({
+        id: it?.id ?? `${Date.now()}_${idx}`,
+        myspikeWA: String(it?.myspikeWA ?? it?.myspike ?? "").trim(),
+        bestDacumWA: String(it?.bestDacumWA ?? it?.best ?? "").trim(),
+        score: safeNumber(it?.score, 0),
+        topK: Array.isArray(it?.topK) ? it.topK : [],
+        raw: it,
+      }));
+
+      setResults(normalized);
+      if (!normalized.length) {
+        setErr(
+          "Tiada item dipulangkan oleh backend. Semak seed WA & MySPIKE index."
+        );
+      }
     } catch (e) {
-      setData(null);
       setErr(String(e?.message || e));
     } finally {
       setLoading(false);
     }
   }
 
-  function setDecision(localWaId, value) {
-    setDecisions((prev) => ({ ...prev, [localWaId]: value }));
-  }
-
-  function exportDecisions() {
-    const items = data?.items || [];
+  const exportJson = () => {
     const payload = {
-      sessionId,
       exportedAt: new Date().toISOString(),
+      sessionId,
       threshold,
       topK,
-      items: items.map((it) => ({
-        localWaId: it.localWaId,
-        cuTitle: it.cuTitle,
-        cuCode: it.cuCode,
-        waTitle: it.waTitle,
-        waCode: it.waCode,
-        best: it.best || null,
-        candidates: it.candidates || [],
-        decision: decisions[it.localWaId] || null,
-      })),
+      totals: { items: itemCount, decided: decidedCount },
+      results,
     };
-
     const blob = new Blob([JSON.stringify(payload, null, 2)], {
       type: "application/json",
     });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `s2_compare_${sessionId || "session"}.json`;
+    a.download = `s2-compare-${sessionId || "session"}-${Date.now()}.json`;
     a.click();
     URL.revokeObjectURL(url);
-  }
-
-  const items = data?.items || [];
-  const decidedCount = Object.keys(decisions || {}).length;
+  };
 
   return (
-    <div style={{ padding: 24, maxWidth: 1200, margin: "0 auto" }}>
+    <div style={{ padding: 24, maxWidth: 1100, margin: "0 auto" }}>
       <h1 style={{ marginTop: 0 }}>Sistem 2 — MySPIKE Compare (Page 2.2)</h1>
       <p style={{ marginTop: 6, color: "#444" }}>
         Sistem bandingkan WA sebenar (DACUM) ↔ WA MySPIKE. Panel tentukan keputusan{" "}
-        <b>ADA</b> / <b>TIADA</b>.
+        <b>ADA / TIADA</b>.
       </p>
 
+      {/* Controls */}
       <div
         style={{
           border: "1px solid #ddd",
           borderRadius: 12,
-          padding: 14,
-          marginTop: 12,
-          display: "flex",
-          gap: 10,
-          flexWrap: "wrap",
-          alignItems: "center",
+          padding: 16,
+          marginTop: 16,
         }}
       >
-        <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          Session ID
-          <input
-            value={sessionId}
-            onChange={(e) => setSessionId(e.target.value)}
-            style={{ padding: 10, width: 220 }}
-          />
-        </label>
-
-        <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          Threshold
-          <input
-            type="number"
-            step="0.01"
-            value={threshold}
-            onChange={(e) => setThreshold(e.target.value)}
-            style={{ padding: 10, width: 110 }}
-          />
-        </label>
-
-        <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          TopK
-          <input
-            type="number"
-            step="1"
-            value={topK}
-            onChange={(e) => setTopK(e.target.value)}
-            style={{ padding: 10, width: 90 }}
-          />
-        </label>
-
-        <button
-          onClick={runCompare}
-          disabled={loading}
+        <div
           style={{
-            padding: "10px 14px",
-            border: "1px solid #111",
-            background: "#111",
-            color: "white",
-            borderRadius: 12,
-            opacity: loading ? 0.7 : 1,
+            display: "grid",
+            gridTemplateColumns: "1.2fr 1fr 1fr auto",
+            gap: 12,
+            alignItems: "end",
           }}
         >
-          {loading ? "Comparing..." : "Run Compare (Real)"}
-        </button>
+          <label>
+            Session ID
+            <input
+              value={sessionId}
+              onChange={(e) => setSessionId(e.target.value)}
+              style={{ width: "100%", padding: 10, marginTop: 6 }}
+            />
+          </label>
 
-        <button
-          onClick={exportDecisions}
-          disabled={!items.length}
-          style={{ padding: "10px 14px", borderRadius: 12 }}
-        >
-          Export JSON
-        </button>
+          <label>
+            Threshold
+            <input
+              value={threshold}
+              onChange={(e) => setThreshold(e.target.value)}
+              style={{ width: "100%", padding: 10, marginTop: 6 }}
+            />
+          </label>
 
-        <div style={{ marginLeft: "auto", color: "#444" }}>
-          Items: <b>{items.length}</b> • Decided: <b>{decidedCount}</b>
+          <label>
+            TopK
+            <input
+              value={topK}
+              onChange={(e) => setTopK(e.target.value)}
+              style={{ width: "100%", padding: 10, marginTop: 6 }}
+            />
+          </label>
+
+          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+            <button
+              onClick={runCompare}
+              disabled={loading}
+              style={{
+                padding: "10px 14px",
+                border: "1px solid #111",
+                background: "#111",
+                color: "white",
+                borderRadius: 12,
+                opacity: loading ? 0.7 : 1,
+                cursor: loading ? "not-allowed" : "pointer",
+                minWidth: 170,
+              }}
+            >
+              {loading ? "Running..." : "Run Compare (Real)"}
+            </button>
+
+            <button
+              onClick={exportJson}
+              disabled={!results.length}
+              style={{
+                padding: "10px 14px",
+                border: "1px solid #999",
+                background: "white",
+                borderRadius: 12,
+                opacity: !results.length ? 0.5 : 1,
+                cursor: !results.length ? "not-allowed" : "pointer",
+              }}
+            >
+              Export JSON
+            </button>
+          </div>
         </div>
+
+        <div style={{ marginTop: 12, color: "#333", textAlign: "right" }}>
+          Items: <b>{itemCount}</b> • Decided: <b>{decidedCount}</b>
+        </div>
+
+        {err && (
+          <div
+            style={{
+              marginTop: 12,
+              padding: 12,
+              border: "1px solid #f2b8b8",
+              background: "#ffecec",
+              borderRadius: 12,
+              color: "#7a1f1f",
+            }}
+          >
+            {err}
+          </div>
+        )}
       </div>
 
-      {!!err && (
-        <div
-          style={{
-            marginTop: 12,
-            padding: 12,
-            border: "1px solid #ffb4b4",
-            background: "#ffecec",
-            borderRadius: 12,
-          }}
-        >
-          {err}
-        </div>
-      )}
-
-      {!loading && !err && items.length === 0 && (
-        <div
-          style={{
-            marginTop: 12,
-            padding: 14,
-            border: "1px dashed #bbb",
-            borderRadius: 12,
-            color: "#444",
-          }}
-        >
-          Tiada item untuk dibandingkan. Pastikan:
-          <ul style={{ marginTop: 8 }}>
-            <li>Anda sudah seed WA dari Page 2.1 (Sahkan & Teruskan).</li>
-            <li>MySPIKE index telah dibina (jika compare bergantung pada index).</li>
-          </ul>
-        </div>
-      )}
-
-      <div style={{ marginTop: 14, display: "grid", gap: 12 }}>
-        {items.map((it, idx) => {
-          const bestScore = typeof it?.best?.score === "number" ? it.best.score : null;
-          const suggested =
-            bestScore !== null && bestScore >= Number(threshold)
-              ? "ADA (suggested)"
-              : "TIADA (suggested)";
-
-          const chosen = decisions[it.localWaId] || "";
-
-          return (
-            <div
-              key={it.localWaId || idx}
-              style={{ border: "1px solid #ddd", borderRadius: 12, padding: 14 }}
-            >
-              <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                <div style={{ fontWeight: 800 }}>#{idx + 1}</div>
-                <div style={{ color: "#444" }}>
-                  <b>CU:</b> {it.cuCode ? `${it.cuCode} — ` : ""}{it.cuTitle || "-"}
-                </div>
-                <div style={{ marginLeft: "auto", color: "#444" }}>
-                  Suggested: <b>{suggested}</b>
-                </div>
-              </div>
-
-              <div style={{ marginTop: 10 }}>
-                <div style={{ fontWeight: 800, marginBottom: 6 }}>WA Sebenar</div>
-                <div style={{ padding: 10, background: "#f7f7f7", borderRadius: 10 }}>
-                  {it.waCode ? <b>{it.waCode}</b> : null} {it.waTitle || "-"}
-                </div>
-              </div>
-
-              <div style={{ marginTop: 10 }}>
-                <div style={{ fontWeight: 800, marginBottom: 6 }}>Padanan MySPIKE (Top Match)</div>
-                <div style={{ padding: 10, background: "#f7f7ff", borderRadius: 10 }}>
+      {/* Results list */}
+      <div style={{ marginTop: 18 }}>
+        {!results.length ? (
+          <div
+            style={{
+              marginTop: 12,
+              padding: 14,
+              border: "1px dashed #bbb",
+              borderRadius: 12,
+              color: "#444",
+            }}
+          >
+            Tiada item untuk dibandingkan. Pastikan:
+            <ul style={{ marginTop: 8 }}>
+              <li>
+                Anda sudah seed WA dari Page 2.1 (Sahkan &amp; Teruskan).
+              </li>
+              <li>
+                MySPIKE index telah dibina (jika compare bergantung pada index).
+              </li>
+            </ul>
+          </div>
+        ) : (
+          <div style={{ display: "grid", gap: 12 }}>
+            {results.map((r, idx) => (
+              <div
+                key={r.id}
+                style={{
+                  border: "1px solid #ddd",
+                  borderRadius: 12,
+                  padding: 16,
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    gap: 12,
+                    alignItems: "flex-start",
+                  }}
+                >
                   <div>
-                    <b>Score:</b>{" "}
-                    {bestScore === null ? "-" : bestScore.toFixed(3)}
+                    <div style={{ fontSize: 13, color: "#666" }}>
+                      Item #{idx + 1}
+                    </div>
+                    <div style={{ marginTop: 8 }}>
+                      <div style={{ fontWeight: 700 }}>WA MySPIKE</div>
+                      <div style={{ marginTop: 6, color: "#222" }}>
+                        {r.myspikeWA || <i>(tiada)</i>}
+                      </div>
+                    </div>
                   </div>
-                  <div>
-                    <b>cpId:</b> {it?.best?.myspike?.cpId || "-"}
-                  </div>
-                  <div>
-                    <b>WA MySPIKE:</b> {it?.best?.myspike?.myWaTitle || "-"}
+
+                  <div style={{ textAlign: "right" }}>
+                    <div style={{ fontSize: 13, color: "#666" }}>Skor</div>
+                    <div style={{ fontSize: 22, fontWeight: 800 }}>
+                      {pct(r.score)}
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              {Array.isArray(it.candidates) && it.candidates.length > 0 && (
-                <details style={{ marginTop: 10 }}>
-                  <summary style={{ cursor: "pointer" }}>
-                    Lihat {it.candidates.length} cadangan lain
-                  </summary>
-                  <div style={{ marginTop: 8, display: "grid", gap: 8 }}>
-                    {it.candidates.map((c, k) => (
-                      <div
-                        key={k}
+                <div style={{ marginTop: 14 }}>
+                  <div style={{ fontWeight: 700 }}>
+                    Cadangan DACUM (Best Match)
+                  </div>
+                  <div style={{ marginTop: 6, color: "#222" }}>
+                    {r.bestDacumWA || <i>(tiada)</i>}
+                  </div>
+                </div>
+
+                <div style={{ marginTop: 14 }}>
+                  <div style={{ fontWeight: 700 }}>Top {topK} Calon DACUM</div>
+                  <div style={{ marginTop: 8 }}>
+                    {(r.topK || []).length ? (
+                      <table
                         style={{
-                          padding: 10,
+                          width: "100%",
+                          borderCollapse: "collapse",
                           border: "1px solid #eee",
-                          borderRadius: 10,
                         }}
                       >
-                        <div>
-                          <b>Score:</b>{" "}
-                          {typeof c.score === "number" ? c.score.toFixed(3) : "-"}
-                        </div>
-                        <div>
-                          <b>cpId:</b> {c.cpId || "-"}
-                        </div>
-                        <div>
-                          <b>WA:</b> {c.myWaTitle || "-"}
-                        </div>
+                        <thead>
+                          <tr style={{ background: "#fafafa" }}>
+                            <th
+                              style={{
+                                textAlign: "left",
+                                padding: 10,
+                                borderBottom: "1px solid #eee",
+                                width: 50,
+                              }}
+                            >
+                              #
+                            </th>
+                            <th
+                              style={{
+                                textAlign: "left",
+                                padding: 10,
+                                borderBottom: "1px solid #eee",
+                              }}
+                            >
+                              DACUM WA
+                            </th>
+                            <th
+                              style={{
+                                textAlign: "right",
+                                padding: 10,
+                                borderBottom: "1px solid #eee",
+                                width: 90,
+                              }}
+                            >
+                              Skor
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {r.topK.slice(0, safeNumber(topK, 5)).map((t, i) => (
+                            <tr key={i}>
+                              <td
+                                style={{
+                                  padding: 10,
+                                  borderBottom: "1px solid #f2f2f2",
+                                  color: "#666",
+                                }}
+                              >
+                                {i + 1}
+                              </td>
+                              <td
+                                style={{
+                                  padding: 10,
+                                  borderBottom: "1px solid #f2f2f2",
+                                  color: "#222",
+                                }}
+                              >
+                                {String(t?.dacumWA || "").trim() || <i>(tiada)</i>}
+                              </td>
+                              <td
+                                style={{
+                                  padding: 10,
+                                  borderBottom: "1px solid #f2f2f2",
+                                  textAlign: "right",
+                                  fontWeight: 700,
+                                }}
+                              >
+                                {pct(t?.score)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    ) : (
+                      <div style={{ color: "#666" }}>
+                        Tiada TopK dipulangkan oleh backend untuk item ini.
                       </div>
-                    ))}
+                    )}
                   </div>
-                </details>
-              )}
-
-              <div style={{ marginTop: 12, display: "flex", gap: 10, alignItems: "center" }}>
-                <button
-                  onClick={() => setDecision(it.localWaId, "ADA")}
-                  style={{
-                    padding: "10px 14px",
-                    borderRadius: 12,
-                    border: "1px solid #111",
-                    background: chosen === "ADA" ? "#111" : "white",
-                    color: chosen === "ADA" ? "white" : "#111",
-                  }}
-                >
-                  ADA
-                </button>
-                <button
-                  onClick={() => setDecision(it.localWaId, "TIADA")}
-                  style={{
-                    padding: "10px 14px",
-                    borderRadius: 12,
-                    border: "1px solid #111",
-                    background: chosen === "TIADA" ? "#111" : "white",
-                    color: chosen === "TIADA" ? "white" : "#111",
-                  }}
-                >
-                  TIADA
-                </button>
-
-                <div style={{ marginLeft: "auto", color: "#444" }}>
-                  Keputusan: <b>{chosen || "-"}</b>
                 </div>
+
+                {/* STEP 2 akan letak ADA/TIADA di sini */}
               </div>
-            </div>
-          );
-        })}
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
