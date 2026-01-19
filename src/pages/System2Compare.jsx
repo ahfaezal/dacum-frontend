@@ -61,17 +61,16 @@ export default function System2Compare() {
         }),
       });
 
-      const json = await res.json().catch(() => ({}));
+      const json = await res.json();
+
       if (!res.ok) {
         throw new Error(json?.error || json?.detail || "Compare gagal");
       }
 
-      // Backend anda mungkin pulang dalam bentuk:
-      // 1) { ok:true, items:[...] }
-      // 2) { items:[...] }
-      // 3) [ ... ]
-      const items =
-        Array.isArray(json) ? json : Array.isArray(json?.items) ? json.items : [];
+      // ✅ BACKEND PULANG ARRAY TERUS
+      const items = Array.isArray(json) ? json : [];
+      setItems(items);
+      setErr("");
 
       // Normalise (pastikan field wujud)
       const normalized = (items || []).map((it, idx) => ({
