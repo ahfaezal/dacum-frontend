@@ -191,28 +191,30 @@ export default function System2CuEntry() {
       // 1) Simpan draf local
       lsSet(storageKey, JSON.stringify({ savedAt: new Date().toISOString(), meta, cus }));
 
-      // 2) Bina waList (objek lengkap untuk audit/compare)
-      const waList = [];
+      // bina WA object (untuk masa depan)
+      const waListObj = [];
       for (const cu of cus || []) {
-        const cuTitle = String(cu?.cuTitle || "").trim();
-        const cuCode = String(cu?.cuCode || "").trim().toUpperCase();
         for (const a of cu.activities || []) {
-          const waTitle = String(a?.waTitle || "").trim();
-          const waCode = String(a?.waCode || "").trim().toUpperCase();
-          if (waTitle) waList.push({ cuTitle, cuCode, waTitle, waCode });
+          const t = String(a?.waTitle || "").trim();
+          if (t) waListObj.push({
+            cuTitle: cu.cuTitle,
+            cuCode: cu.cuCode,
+            waTitle: t,
+            waCode: a.waCode,
+          });
         }
       }
 
-      // 3) Seed ke backend
-      const waTitles = waList.map((x) => x.waTitle);
+      // ✅ INI YANG BACKEND EXPECT
+      const waList = waListObj.map(x => x.waTitle);
 
       const res = await fetch(`${API_BASE}/api/s2/seed-wa`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           sessionId,
-          waList,     // versi objek (baru)
-          waTitles,   // versi string (serasi server lama)
+          waList,        // ← string[]
+          waListObj,     // optional (tak ganggu backend)
         }),
       });
 
