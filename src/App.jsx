@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import ClusterPage from "./ClusterPage.jsx";
 import LiveBoard from "./LiveBoard.jsx";
 import PanelPage from "./PanelPage.jsx";
+import System2CuEntry from "./pages/System2CuEntry";
 
 function parseHash() {
   // contoh:
@@ -35,17 +36,22 @@ export default function App() {
       sessionId || ""
     )}`);
 
-  // PANEL (handphone) - input kad sahaja
-  if (path === "/panel") {
-    return <PanelPage />;
-  }
+// PANEL (handphone) - input kad sahaja
+if (path === "/panel") {
+  return <PanelPage />;
+}
 
-  // CLUSTER (fasilitator selepas Agreed)
-  if (path === "/cluster") {
-    const sid = params.get("session") || "Masjid";
-    return <ClusterPage initialSessionId={sid} onBack={goBoard} />;
-  }
+// CLUSTER (fasilitator selepas Agreed)
+if (path === "/cluster") {
+  const sid = params.get("session") || "Masjid";
+  return <ClusterPage initialSessionId={sid} onBack={goBoard} />;
+}
 
-  // DEFAULT: LIVE BOARD (fasilitator)
-  return <LiveBoard onAgreed={(sid) => goCluster(sid)} goPanel={goPanel} />;
+// SISTEM 2 — CU ENTRY
+if (path === "/s2/cu-entry") {
+  return <System2CuEntry />;
+}
+
+// DEFAULT: LIVE BOARD (fasilitator)
+return <LiveBoard onAgreed={(sid) => goCluster(sid)} goPanel={goPanel} />;
 }
