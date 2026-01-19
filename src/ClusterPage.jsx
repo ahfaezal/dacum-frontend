@@ -218,18 +218,27 @@ useEffect(() => {
   // Actions
   // =========================
 
-  async function loadRawCards() {
+async function loadRawCards() {
   const sid = String(sessionId || "").trim();
   if (!sid) return;
 
-  try {
-    const res = await fetch(
-      `${apiBase}/api/cards/${encodeURIComponent(sid)}`
-    );
-    const json = await res.json();
+  const url = `${apiBase}/api/cards/${encodeURIComponent(sid)}`;
 
-    // Backend pulangkan array terus
-    const cards = Array.isArray(json) ? json : json?.cards || [];
+  try {
+    // paksa bypass cache supaya tak jadi 304
+    let res = await fetch(url, { cache: "no-store" });
+
+    // fallback kalau masih 304
+    if (res.status === 304) {
+      res = await fetch(url, { cache: "reload" });
+    }
+
+    if (!res.ok) {
+      throw new Error(`loadRawCards HTTP ${res.status}`);
+    }
+
+    const json = await res.json();
+    const cards = Array.isArray(json) ? json : (json?.cards || []);
 
     setRawCards(
       cards.map((c) => ({
@@ -240,6 +249,7 @@ useEffect(() => {
     );
   } catch (e) {
     console.error("Gagal load kad mentah:", e);
+    setRawCards([]); // optional, biar jelas kosong jika error
   }
 }
     async function loadCluster(opts = {}) {
