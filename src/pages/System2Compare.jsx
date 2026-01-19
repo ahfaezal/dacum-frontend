@@ -43,6 +43,7 @@ export default function System2Compare() {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
   const [result, setResult] = useState(null);
+  const [threshold, setThreshold] = useState(0.45);
 
   // keputusan manusia (override)
   // { [cuCode]: { finalStatus: "ADA"|"TIADA", finalCuCode?, finalCuTitle?, note? } }
@@ -73,33 +74,37 @@ export default function System2Compare() {
     localStorage.setItem(decisionKey(sessionId), JSON.stringify(next));
   }
 
-  async function runCompare() {
-    setLoading(true);
-    setErr("");
-    setResult(null);
-    try {
-      const body = {
-        sessionId,
-        meta: meta || {},
-        cus,
-        options: { thresholdAda: 0.78, topK: 5 },
-      };
+async function runCompare() {
+  setLoading(true);
+  setErr("");
+  setResult(null);
 
-      const res = await fetch(`${API_BASE}/api/s2/compare`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
+  try {
+    const body = {
+      sessionId: String(sessionId || "").trim() || "dacum-demo",
+      threshold: 0.45, // boleh ubah nanti jadi input UI
+      // urls: [] // optional kalau nak override DEFAULT_MYSPIKE_URLS di backend
+    };
 
-      const json = await res.json();
-      if (!res.ok) throw new Error(json?.error || "Compare gagal");
-      setResult(json);
-    } catch (e) {
-      setErr(String(e?.message || e));
-    } finally {
-      setLoading(false);
+    const res = await fetch(`${API_BASE}/api/myspike/compare`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    const json = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      throw new Error(json?.error || `Compare gagal (HTTP ${res.status})`);
     }
+
+    setResult(json);
+  } catch (e) {
+    setErr(String(e?.message || e));
+  } finally {
+    setLoading(false);
   }
+}
 
   function setFinalStatus(cuCode, status) {
     const next = {
