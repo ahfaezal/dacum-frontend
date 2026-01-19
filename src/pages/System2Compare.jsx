@@ -1,19 +1,33 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { useLocation } from "react-router-dom";
+import React, { useEffect, useState } from "react";
 
 const API_BASE =
   (import.meta?.env?.VITE_API_BASE && String(import.meta.env.VITE_API_BASE)) ||
   "https://dacum-backend.onrender.com";
 
-function useQuery() {
-  const { search } = useLocation();
-  return useMemo(() => new URLSearchParams(search), [search]);
+// localStorage safe wrapper
+function lsGet(key) {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+function lsSet(key, val) {
+  try {
+    localStorage.setItem(key, val);
+  } catch {}
+}
+
+// Ambil query params dari hash: #/s2/compare?session=Masjid
+function getHashParams() {
+  const h = String(window.location.hash || "");
+  const parts = h.split("?");
+  const qs = parts[1] || "";
+  return new URLSearchParams(qs);
 }
 
 export default function System2Compare() {
-  const q = useQuery();
-  const [sessionId, setSessionId] = useState(q.get("sessionId") || "Masjid");
-
+  const [sessionId, setSessionId] = useState("Masjid");
   const [threshold, setThreshold] = useState(0.55);
   const [topK, setTopK] = useState(5);
 
@@ -21,8 +35,27 @@ export default function System2Compare() {
   const [err, setErr] = useState("");
   const [data, setData] = useState(null);
 
-  // keputusan human
-  const [decisions, setDecisions] = useState({}); // localWaId -> "ADA"|"TIADA"
+  // keputusan human: localWaId -> "ADA"|"TIADA"
+  const [decisions, setDecisions] = useState({});
+
+  // init sessionId dari hash + load decisions cache
+  useEffect(() => {
+    const params = getHashParams();
+    const sid = params.get("session") || "Masjid";
+    setSessionId(sid);
+
+    const cached = lsGet(`inoss:s2:compare:decisions:${sid}`);
+    if (cached) {
+      try {
+        setDecisions(JSON.parse(cached) || {});
+      } catch {}
+    }
+  }, []);
+
+  // bila sessionId berubah, simpan decisions cache
+  useEffect(() => {
+    lsSet(`inoss:s2:compare:decisions:${sessionId}`, JSON.stringify(decisions));
+  }, [sessionId, decisions]);
 
   async function runCompare() {
     setErr("");
@@ -34,7 +67,11 @@ export default function System2Compare() {
       const res = await fetch(`${API_BASE}/api/myspike/compare`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId: sid, threshold: Number(threshold), topK: Number(topK) }),
+        body: JSON.stringify({
+          sessionId: sid,
+          threshold: Number(threshold),
+          topK: Number(topK),
+        }),
       });
 
       const json = await res.json().catch(() => ({}));
@@ -43,214 +80,275 @@ export default function System2Compare() {
       }
 
       setData(json);
-
-      // reset decisions (optional) supaya tak bercampur session lama
-      setDecisions({});
     } catch (e) {
-      setErr(String(e?.message || e));
       setData(null);
+      setErr(String(e?.message || e));
     } finally {
       setLoading(false);
     }
   }
 
-  useEffect(() => {
-    // auto-run bila masuk page compare (kalau sessionId ada)
-    if (String(sessionId || "").trim()) runCompare();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   function setDecision(localWaId, value) {
     setDecisions((prev) => ({ ...prev, [localWaId]: value }));
   }
 
-  const items = data?.items || [];
-  const decidedCount = Object.keys(decisions).length;
-
   function exportDecisions() {
+    const items = data?.items || [];
     const payload = {
       sessionId,
-      generatedAt: new Date().toISOString(),
+      exportedAt: new Date().toISOString(),
       threshold,
       topK,
-      decisions: items.map((it) => ({
+      items: items.map((it) => ({
         localWaId: it.localWaId,
         cuTitle: it.cuTitle,
+        cuCode: it.cuCode,
         waTitle: it.waTitle,
+        waCode: it.waCode,
         best: it.best || null,
+        candidates: it.candidates || [],
         decision: decisions[it.localWaId] || null,
       })),
     };
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {
+      type: "application/json",
+    });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `system2_decisions_${sessionId || "session"}.json`;
+    a.download = `s2_compare_${sessionId || "session"}.json`;
     a.click();
     URL.revokeObjectURL(url);
   }
 
-  return (
-    <div style={{ padding: 16, maxWidth: 1200, margin: "0 auto" }}>
-      <h2 style={{ margin: "0 0 6px" }}>Sistem 2 — Compare (Human Decide ADA / TIADA)</h2>
-      <div style={{ opacity: 0.8, marginBottom: 12 }}>
-        Compare WA sebenar (DACUM) ↔ WA MySPIKE (index). Keputusan akhir dibuat oleh manusia.
-      </div>
+  const items = data?.items || [];
+  const decidedCount = Object.keys(decisions || {}).length;
 
-      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginBottom: 12 }}>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <div style={{ minWidth: 90 }}>Session ID</div>
+  return (
+    <div style={{ padding: 24, maxWidth: 1200, margin: "0 auto" }}>
+      <h1 style={{ marginTop: 0 }}>Sistem 2 — MySPIKE Compare (Page 2.2)</h1>
+      <p style={{ marginTop: 6, color: "#444" }}>
+        Sistem bandingkan WA sebenar (DACUM) ↔ WA MySPIKE. Panel tentukan keputusan{" "}
+        <b>ADA</b> / <b>TIADA</b>.
+      </p>
+
+      <div
+        style={{
+          border: "1px solid #ddd",
+          borderRadius: 12,
+          padding: 14,
+          marginTop: 12,
+          display: "flex",
+          gap: 10,
+          flexWrap: "wrap",
+          alignItems: "center",
+        }}
+      >
+        <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          Session ID
           <input
             value={sessionId}
             onChange={(e) => setSessionId(e.target.value)}
-            style={{ padding: 8, width: 220 }}
+            style={{ padding: 10, width: 220 }}
           />
-        </div>
+        </label>
 
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <div style={{ minWidth: 80 }}>Threshold</div>
+        <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          Threshold
           <input
             type="number"
             step="0.01"
             value={threshold}
             onChange={(e) => setThreshold(e.target.value)}
-            style={{ padding: 8, width: 110 }}
+            style={{ padding: 10, width: 110 }}
           />
-        </div>
+        </label>
 
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <div style={{ minWidth: 50 }}>TopK</div>
+        <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          TopK
           <input
             type="number"
             step="1"
             value={topK}
             onChange={(e) => setTopK(e.target.value)}
-            style={{ padding: 8, width: 90 }}
+            style={{ padding: 10, width: 90 }}
           />
-        </div>
+        </label>
 
-        <button onClick={runCompare} disabled={loading} style={{ padding: "8px 12px" }}>
+        <button
+          onClick={runCompare}
+          disabled={loading}
+          style={{
+            padding: "10px 14px",
+            border: "1px solid #111",
+            background: "#111",
+            color: "white",
+            borderRadius: 12,
+            opacity: loading ? 0.7 : 1,
+          }}
+        >
           {loading ? "Comparing..." : "Run Compare (Real)"}
         </button>
 
         <button
           onClick={exportDecisions}
           disabled={!items.length}
-          style={{ padding: "8px 12px" }}
-          title="Export keputusan (JSON) untuk audit / simpanan"
+          style={{ padding: "10px 14px", borderRadius: 12 }}
         >
-          Export Decisions (JSON)
+          Export JSON
         </button>
 
-        <div style={{ marginLeft: "auto", opacity: 0.85 }}>
+        <div style={{ marginLeft: "auto", color: "#444" }}>
           Items: <b>{items.length}</b> • Decided: <b>{decidedCount}</b>
         </div>
       </div>
 
-      {err ? (
-        <div style={{ padding: 10, background: "#ffecec", border: "1px solid #ffb4b4", marginBottom: 10 }}>
+      {!!err && (
+        <div
+          style={{
+            marginTop: 12,
+            padding: 12,
+            border: "1px solid #ffb4b4",
+            background: "#ffecec",
+            borderRadius: 12,
+          }}
+        >
           {err}
         </div>
-      ) : null}
+      )}
 
-      {!items.length && !loading ? (
-        <div style={{ padding: 14, border: "1px dashed #bbb", borderRadius: 10, opacity: 0.85 }}>
-          Tiada item untuk compare. Pastikan anda dah seed WA di Page 2.1 dan MySPIKE index wujud.
+      {!loading && !err && items.length === 0 && (
+        <div
+          style={{
+            marginTop: 12,
+            padding: 14,
+            border: "1px dashed #bbb",
+            borderRadius: 12,
+            color: "#444",
+          }}
+        >
+          Tiada item untuk dibandingkan. Pastikan:
+          <ul style={{ marginTop: 8 }}>
+            <li>Anda sudah seed WA dari Page 2.1 (Sahkan & Teruskan).</li>
+            <li>MySPIKE index telah dibina (jika compare bergantung pada index).</li>
+          </ul>
         </div>
-      ) : null}
+      )}
 
-      {items.map((it, idx) => {
-        const suggested =
-          (it?.best?.score ?? 0) >= Number(threshold) ? "ADA (suggested)" : "TIADA (suggested)";
-        const chosen = decisions[it.localWaId] || null;
+      <div style={{ marginTop: 14, display: "grid", gap: 12 }}>
+        {items.map((it, idx) => {
+          const bestScore = typeof it?.best?.score === "number" ? it.best.score : null;
+          const suggested =
+            bestScore !== null && bestScore >= Number(threshold)
+              ? "ADA (suggested)"
+              : "TIADA (suggested)";
 
-        return (
-          <div
-            key={it.localWaId || idx}
-            style={{ border: "1px solid #ddd", borderRadius: 12, padding: 12, marginBottom: 12 }}
-          >
-            <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 8 }}>
-              <div style={{ fontWeight: 700 }}>#{idx + 1}</div>
-              <div style={{ opacity: 0.85 }}>
-                <b>CU:</b> {it.cuTitle || "-"}
-              </div>
-              <div style={{ marginLeft: "auto", opacity: 0.8 }}>
-                Suggested: <b>{suggested}</b>
-              </div>
-            </div>
+          const chosen = decisions[it.localWaId] || "";
 
-            <div style={{ marginBottom: 10 }}>
-              <div style={{ fontWeight: 700, marginBottom: 4 }}>WA Sebenar (DACUM)</div>
-              <div style={{ padding: 10, background: "#f7f7f7", borderRadius: 10 }}>
-                {it.waTitle || "-"}
-              </div>
-            </div>
-
-            <div style={{ marginBottom: 10 }}>
-              <div style={{ fontWeight: 700, marginBottom: 4 }}>Padanan MySPIKE (Top Match)</div>
-              <div style={{ padding: 10, background: "#f7f7ff", borderRadius: 10 }}>
-                <div>
-                  <b>Score:</b> {typeof it?.best?.score === "number" ? it.best.score.toFixed(3) : "-"}
+          return (
+            <div
+              key={it.localWaId || idx}
+              style={{ border: "1px solid #ddd", borderRadius: 12, padding: 14 }}
+            >
+              <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                <div style={{ fontWeight: 800 }}>#{idx + 1}</div>
+                <div style={{ color: "#444" }}>
+                  <b>CU:</b> {it.cuCode ? `${it.cuCode} — ` : ""}{it.cuTitle || "-"}
                 </div>
-                <div>
-                  <b>cpId:</b> {it?.best?.myspike?.cpId || "-"}
-                </div>
-                <div>
-                  <b>WA MySPIKE:</b> {it?.best?.myspike?.myWaTitle || "-"}
+                <div style={{ marginLeft: "auto", color: "#444" }}>
+                  Suggested: <b>{suggested}</b>
                 </div>
               </div>
-            </div>
 
-            {Array.isArray(it.candidates) && it.candidates.length ? (
-              <details style={{ marginBottom: 10 }}>
-                <summary style={{ cursor: "pointer" }}>Lihat {it.candidates.length} cadangan lain</summary>
-                <div style={{ marginTop: 8 }}>
-                  {it.candidates.map((c, k) => (
-                    <div
-                      key={k}
-                      style={{
-                        padding: 10,
-                        border: "1px solid #eee",
-                        borderRadius: 10,
-                        marginBottom: 8,
-                      }}
-                    >
-                      <div>
-                        <b>Score:</b> {typeof c.score === "number" ? c.score.toFixed(3) : "-"}
+              <div style={{ marginTop: 10 }}>
+                <div style={{ fontWeight: 800, marginBottom: 6 }}>WA Sebenar</div>
+                <div style={{ padding: 10, background: "#f7f7f7", borderRadius: 10 }}>
+                  {it.waCode ? <b>{it.waCode}</b> : null} {it.waTitle || "-"}
+                </div>
+              </div>
+
+              <div style={{ marginTop: 10 }}>
+                <div style={{ fontWeight: 800, marginBottom: 6 }}>Padanan MySPIKE (Top Match)</div>
+                <div style={{ padding: 10, background: "#f7f7ff", borderRadius: 10 }}>
+                  <div>
+                    <b>Score:</b>{" "}
+                    {bestScore === null ? "-" : bestScore.toFixed(3)}
+                  </div>
+                  <div>
+                    <b>cpId:</b> {it?.best?.myspike?.cpId || "-"}
+                  </div>
+                  <div>
+                    <b>WA MySPIKE:</b> {it?.best?.myspike?.myWaTitle || "-"}
+                  </div>
+                </div>
+              </div>
+
+              {Array.isArray(it.candidates) && it.candidates.length > 0 && (
+                <details style={{ marginTop: 10 }}>
+                  <summary style={{ cursor: "pointer" }}>
+                    Lihat {it.candidates.length} cadangan lain
+                  </summary>
+                  <div style={{ marginTop: 8, display: "grid", gap: 8 }}>
+                    {it.candidates.map((c, k) => (
+                      <div
+                        key={k}
+                        style={{
+                          padding: 10,
+                          border: "1px solid #eee",
+                          borderRadius: 10,
+                        }}
+                      >
+                        <div>
+                          <b>Score:</b>{" "}
+                          {typeof c.score === "number" ? c.score.toFixed(3) : "-"}
+                        </div>
+                        <div>
+                          <b>cpId:</b> {c.cpId || "-"}
+                        </div>
+                        <div>
+                          <b>WA:</b> {c.myWaTitle || "-"}
+                        </div>
                       </div>
-                      <div>
-                        <b>cpId:</b> {c.cpId || "-"}
-                      </div>
-                      <div>
-                        <b>WA:</b> {c.myWaTitle || "-"}
-                      </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
+                </details>
+              )}
+
+              <div style={{ marginTop: 12, display: "flex", gap: 10, alignItems: "center" }}>
+                <button
+                  onClick={() => setDecision(it.localWaId, "ADA")}
+                  style={{
+                    padding: "10px 14px",
+                    borderRadius: 12,
+                    border: "1px solid #111",
+                    background: chosen === "ADA" ? "#111" : "white",
+                    color: chosen === "ADA" ? "white" : "#111",
+                  }}
+                >
+                  ADA
+                </button>
+                <button
+                  onClick={() => setDecision(it.localWaId, "TIADA")}
+                  style={{
+                    padding: "10px 14px",
+                    borderRadius: 12,
+                    border: "1px solid #111",
+                    background: chosen === "TIADA" ? "#111" : "white",
+                    color: chosen === "TIADA" ? "white" : "#111",
+                  }}
+                >
+                  TIADA
+                </button>
+
+                <div style={{ marginLeft: "auto", color: "#444" }}>
+                  Keputusan: <b>{chosen || "-"}</b>
                 </div>
-              </details>
-            ) : null}
-
-            <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-              <button
-                onClick={() => setDecision(it.localWaId, "ADA")}
-                style={{ padding: "8px 12px", fontWeight: chosen === "ADA" ? 800 : 400 }}
-              >
-                ADA
-              </button>
-              <button
-                onClick={() => setDecision(it.localWaId, "TIADA")}
-                style={{ padding: "8px 12px", fontWeight: chosen === "TIADA" ? 800 : 400 }}
-              >
-                TIADA
-              </button>
-
-              <div style={{ marginLeft: "auto", opacity: 0.85 }}>
-                Keputusan: <b>{chosen || "-"}</b>
               </div>
             </div>
-          </div>
-        );
-      })}
+          );
+        })}
+      </div>
     </div>
   );
 }
