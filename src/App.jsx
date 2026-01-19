@@ -10,6 +10,8 @@ function parseHash() {
   // #/board
   // #/panel
   // #/cluster?session=Masjid
+  // #/s2/cu-entry
+  // #/s2/compare?session=Masjid
   const h = String(window.location.hash || "#/board");
   const [pathPart, qs] = h.replace(/^#/, "").split("?");
   const path = pathPart || "/board";
@@ -37,27 +39,34 @@ export default function App() {
       sessionId || ""
     )}`);
 
-// PANEL (handphone) - input kad sahaja
-if (path === "/panel") {
-  return <PanelPage />;
-}
+  // (optional) helper untuk Sistem 2
+  const goS2Entry = () => (window.location.hash = "#/s2/cu-entry");
+  const goS2Compare = (sessionId) =>
+    (window.location.hash = `#/s2/compare?session=${encodeURIComponent(
+      sessionId || ""
+    )}`);
 
-// CLUSTER (fasilitator selepas Agreed)
-if (path === "/cluster") {
-  const sid = params.get("session") || "Masjid";
-  return <ClusterPage initialSessionId={sid} onBack={goBoard} />;
-}
+  // PANEL (handphone) - input kad sahaja
+  if (path === "/panel") {
+    return <PanelPage />;
+  }
 
-// SISTEM 2 – CU ENTRY (Page 2.1)
-if (path === "/s2/cu-entry") {
-  return <System2CuEntry />;
-}
+  // CLUSTER (fasilitator selepas Agreed)
+  if (path === "/cluster") {
+    const sid = params.get("session") || "Masjid";
+    return <ClusterPage initialSessionId={sid} onBack={goBoard} />;
+  }
 
-// SISTEM 2 – CU BASKET COMPARATOR (Page 2.2)
-if (path === "/s2/compare") {
-  return <System2Compare />;
-}
+  // SISTEM 2 — CU ENTRY (Page 2.1)
+  if (path === "/s2/cu-entry") {
+    return <System2CuEntry />;
+  }
 
-// DEFAULT: LIVE BOARD (fasilitator)
-return <LiveBoard onAgreed={(sid) => goCluster(sid)} goPanel={goPanel} />;
+  // SISTEM 2 — COMPARE (Page 2.2)
+  if (path === "/s2/compare") {
+    return <System2Compare />;
+  }
+
+  // DEFAULT: LIVE BOARD (fasilitator)
+  return <LiveBoard onAgreed={(sid) => goCluster(sid)} goPanel={goPanel} />;
 }
