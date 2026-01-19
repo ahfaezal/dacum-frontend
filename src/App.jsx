@@ -3,6 +3,7 @@ import ClusterPage from "./ClusterPage.jsx";
 import LiveBoard from "./LiveBoard.jsx";
 import PanelPage from "./PanelPage.jsx";
 import System2CuEntry from "./pages/System2CuEntry";
+import System2Compare from "./pages/System2Compare";
 
 function parseHash() {
   // contoh:
@@ -47,9 +48,14 @@ if (path === "/cluster") {
   return <ClusterPage initialSessionId={sid} onBack={goBoard} />;
 }
 
-// SISTEM 2 — CU ENTRY
+// SISTEM 2 – CU ENTRY (Page 2.1)
 if (path === "/s2/cu-entry") {
   return <System2CuEntry />;
+}
+
+// SISTEM 2 – CU BASKET COMPARATOR (Page 2.2)
+if (path === "/s2/compare") {
+  return <System2Compare />;
 }
 
 // DEFAULT: LIVE BOARD (fasilitator)
