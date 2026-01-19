@@ -477,9 +477,9 @@ async function loadRawCards() {
         Status: <strong>connected</strong> | API: <code>{apiBase}</code> | Session:{" "}
         <strong>{String(sessionId || "").trim() || "-"}</strong>{" "}
         <span style={{ marginLeft: 10 }}>
-          Total: <strong>{aiCards.length}</strong> | Assigned:{" "}
+          Total: <strong>{rawCards.length}</strong> | Assigned:{" "}
           <strong>{assignedCount}</strong> | Unassigned:{" "}
-          <strong>{Math.max(0, aiCards.length - assignedCount)}</strong>
+          <strong>{Math.max(0, rawCards.length - assignedCount)}</strong>
         </span>
       </div>
 
