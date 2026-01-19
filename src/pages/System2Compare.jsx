@@ -23,6 +23,26 @@ function pct(x) {
   return `${Math.round(n)}%`;
 }
 
+// ✅ Ambil array item dari pelbagai bentuk response backend
+function pickItems(json) {
+  if (Array.isArray(json)) return json;
+  if (!json || typeof json !== "object") return [];
+
+  if (Array.isArray(json.items)) return json.items;
+  if (Array.isArray(json.results)) return json.results;
+  if (Array.isArray(json.data)) return json.data;
+
+  // sesetengah backend guna key lain
+  if (Array.isArray(json.list)) return json.list;
+  if (Array.isArray(json.payload)) return json.payload;
+
+  // last resort: cari array pertama dalam object
+  for (const k of Object.keys(json)) {
+    if (Array.isArray(json[k])) return json[k];
+  }
+  return [];
+}
+
 export default function System2Compare() {
   const [sessionId, setSessionId] = useState("Masjid");
   const [threshold, setThreshold] = useState(0.55);
@@ -31,7 +51,7 @@ export default function System2Compare() {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
 
-  // ✅ hasil compare dari backend (normalized)
+  // hasil compare dari backend (normalized)
   const [results, setResults] = useState([]);
 
   // hydrate sessionId dari query string (hash)
@@ -60,17 +80,17 @@ export default function System2Compare() {
         }),
       });
 
-      const json = await res.json();
+      const json = await res.json().catch(() => null);
 
       if (!res.ok) {
         throw new Error(json?.error || json?.detail || "Compare gagal");
       }
 
-      // ✅ Backend pulang ARRAY terus
-      const items = Array.isArray(json) ? json : [];
+      // ✅ ambil items dari pelbagai shape
+      const items = pickItems(json);
 
-      // ✅ Normalise (pastikan field wujud & konsisten)
-      const normalized = items.map((it, idx) => ({
+      // Normalise (pastikan field wujud & konsisten)
+      const normalized = (items || []).map((it, idx) => ({
         id: it?.id ?? `${Date.now()}_${idx}`,
         myspikeWA: String(it?.myspikeWA ?? it?.myspike ?? "").trim(),
         bestDacumWA: String(it?.bestDacumWA ?? it?.best ?? "").trim(),
@@ -82,9 +102,16 @@ export default function System2Compare() {
       setResults(normalized);
 
       if (!normalized.length) {
+        // debug ringkas supaya senang trace bila deploy
+        const keys =
+          json && typeof json === "object" ? Object.keys(json).join(", ") : "";
         setErr(
-          "Tiada item dipulangkan oleh backend. Semak seed WA & MySPIKE index."
+          `Tiada item dipulangkan (normalized=0). Semak seed WA & MySPIKE index. ${
+            keys ? `Keys backend: ${keys}` : ""
+          }`
         );
+      } else {
+        setErr("");
       }
     } catch (e) {
       setErr(String(e?.message || e));
@@ -213,6 +240,7 @@ export default function System2Compare() {
               background: "#ffecec",
               borderRadius: 12,
               color: "#7a1f1f",
+              whiteSpace: "pre-wrap",
             }}
           >
             {err}
