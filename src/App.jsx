@@ -6,17 +6,58 @@ import System2CuEntry from "./pages/System2CuEntry";
 import System2Compare from "./pages/System2Compare";
 
 function parseHash() {
-  // contoh:
-  // #/board
-  // #/panel
-  // #/cluster?session=Masjid
-  // #/s2/cu-entry
-  // #/s2/compare?session=Masjid
   const h = String(window.location.hash || "#/board");
   const [pathPart, qs] = h.replace(/^#/, "").split("?");
   const path = pathPart || "/board";
   const params = new URLSearchParams(qs || "");
   return { path, params };
+}
+
+/** ✅ Error Boundary supaya tak blank dan boleh nampak error sebenar */
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { err: null, info: null };
+  }
+  static getDerivedStateFromError(err) {
+    return { err };
+  }
+  componentDidCatch(err, info) {
+    this.setState({ info });
+    // log untuk console juga
+    console.error("UI crashed:", err, info);
+  }
+  render() {
+    if (this.state.err) {
+      const msg =
+        this.state.err?.message ||
+        String(this.state.err) ||
+        "Unknown error";
+      return (
+        <div style={{ padding: 20, fontFamily: "system-ui" }}>
+          <h2 style={{ marginTop: 0, color: "#b00020" }}>
+            UI Crash (ErrorBoundary)
+          </h2>
+          <div style={{ marginBottom: 10 }}>
+            <b>Message:</b> {msg}
+          </div>
+          <div style={{ marginBottom: 10 }}>
+            <b>Route:</b> {String(window.location.hash || "")}
+          </div>
+          <details open style={{ whiteSpace: "pre-wrap" }}>
+            <summary>Stack</summary>
+            <div style={{ marginTop: 8, fontSize: 12 }}>
+              {this.state.err?.stack || "(no stack)"}
+            </div>
+          </details>
+          <div style={{ marginTop: 14, opacity: 0.85 }}>
+            Tip: buka Console dan copy “Message” di atas, kemudian paste dekat sini.
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
 }
 
 export default function App() {
@@ -26,7 +67,6 @@ export default function App() {
     const onChange = () => setRoute(parseHash());
     window.addEventListener("hashchange", onChange);
 
-    // pastikan ada default hash
     if (!window.location.hash) window.location.hash = "#/board";
 
     return () => window.removeEventListener("hashchange", onChange);
@@ -39,34 +79,20 @@ export default function App() {
       sessionId || ""
     )}`);
 
-  // (optional) helper untuk Sistem 2
-  const goS2Entry = () => (window.location.hash = "#/s2/cu-entry");
-  const goS2Compare = (sessionId) =>
-    (window.location.hash = `#/s2/compare?session=${encodeURIComponent(
-      sessionId || ""
-    )}`);
+  let view = null;
 
-  // PANEL (handphone) - input kad sahaja
   if (path === "/panel") {
-    return <PanelPage />;
-  }
-
-  // CLUSTER (fasilitator selepas Agreed)
-  if (path === "/cluster") {
+    view = <PanelPage />;
+  } else if (path === "/cluster") {
     const sid = params.get("session") || "Masjid";
-    return <ClusterPage initialSessionId={sid} onBack={goBoard} />;
+    view = <ClusterPage initialSessionId={sid} onBack={goBoard} />;
+  } else if (path === "/s2/cu-entry") {
+    view = <System2CuEntry />;
+  } else if (path === "/s2/compare") {
+    view = <System2Compare />;
+  } else {
+    view = <LiveBoard onAgreed={(sid) => goCluster(sid)} goPanel={goPanel} />;
   }
 
-  // SISTEM 2 — CU ENTRY (Page 2.1)
-  if (path === "/s2/cu-entry") {
-    return <System2CuEntry />;
-  }
-
-  // SISTEM 2 — COMPARE (Page 2.2)
-  if (path === "/s2/compare") {
-    return <System2Compare />;
-  }
-
-  // DEFAULT: LIVE BOARD (fasilitator)
-  return <LiveBoard onAgreed={(sid) => goCluster(sid)} goPanel={goPanel} />;
+  return <ErrorBoundary>{view}</ErrorBoundary>;
 }
