@@ -408,13 +408,14 @@ async function runCompare() {
         </div>
 ) : (
   <div style={{ marginTop: 16, color: "#666" }}>
-    {!result ? (
-      "Klik “Run AI Comparison” untuk mula."
-    ) : (
-      <>
-        <div style={{ marginBottom: 8 }}>Tiada result berstruktur dipaparkan.</div>
+    {!result && "Klik \"Run AI Comparison\" untuk mula."}
 
-        {/* DEBUG: paparkan response sebenar backend */}
+    {result && (
+      <div>
+        <div style={{ marginBottom: 8 }}>
+          Tiada result berstruktur dipaparkan.
+        </div>
+
         <pre
           style={{
             marginTop: 12,
@@ -427,9 +428,8 @@ async function runCompare() {
         >
           {JSON.stringify(result, null, 2)}
         </pre>
-      </>
+      </div>
     )}
   </div>
 )
-);
 }
