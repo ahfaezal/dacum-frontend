@@ -1,5 +1,4 @@
-import React, { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import React, { useState } from "react";
 
 const API_BASE =
   (import.meta?.env?.VITE_API_BASE && String(import.meta.env.VITE_API_BASE)) ||
@@ -10,7 +9,6 @@ function uid(prefix = "tmp") {
 }
 
 export default function System2CuEntry() {
-  const nav = useNavigate();
 
   const [sessionId, setSessionId] = useState("Masjid");
   const [cus, setCus] = useState([
@@ -21,8 +19,7 @@ export default function System2CuEntry() {
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
 
-  const totalWA = useMemo(() => {
-    return cus.reduce((sum, c) => sum + (c.activities?.length || 0), 0);
+  const totalWA = cus.reduce((sum, c) => sum + (c.activities?.length || 0), 0);
   }, [cus]);
 
   function addCU() {
@@ -126,7 +123,7 @@ export default function System2CuEntry() {
       setMsg(`Seed berjaya: ${json?.total ?? waList.length} WA disimpan dalam session "${sid}".`);
 
       // terus ke compare
-      nav(`/system2/compare?sessionId=${encodeURIComponent(sid)}`);
+      window.location.hash = `#/s2/compare?session=${encodeURIComponent(sessionId)}`;
     } catch (e) {
       setErr(String(e?.message || e));
     } finally {
