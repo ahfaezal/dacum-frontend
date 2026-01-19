@@ -204,16 +204,17 @@ export default function System2CuEntry() {
       }
 
       // 3) Seed ke backend
+      const waTitles = waList.map((x) => x.waTitle);
+
       const res = await fetch(`${API_BASE}/api/s2/seed-wa`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        const waTitles = waList.map(x => x.waTitle);
-
         body: JSON.stringify({
           sessionId,
-          waList,      // versi objek (future-proof)
-          waTitles    // versi string (server lama)
-      }),
+          waList,     // versi objek (baru)
+          waTitles,   // versi string (serasi server lama)
+        }),
+      });
 
       const json = await res.json().catch(() => ({}));
       if (!res.ok || json?.ok === false) {
