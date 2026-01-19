@@ -431,5 +431,4 @@ async function runCompare() {
       </div>
     )}
   </div>
-);
-}
+)}
