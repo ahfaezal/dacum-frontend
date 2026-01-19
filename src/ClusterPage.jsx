@@ -225,20 +225,15 @@ async function loadRawCards() {
   const url = `${apiBase}/api/cards/${encodeURIComponent(sid)}`;
 
   try {
-    // paksa bypass cache supaya tak jadi 304
     let res = await fetch(url, { cache: "no-store" });
-
-    // fallback kalau masih 304
-    if (res.status === 304) {
-      res = await fetch(url, { cache: "reload" });
-    }
-
-    if (!res.ok) {
-      throw new Error(`loadRawCards HTTP ${res.status}`);
-    }
+    if (res.status === 304) res = await fetch(url, { cache: "reload" });
+    if (!res.ok) throw new Error(`loadRawCards HTTP ${res.status}`);
 
     const json = await res.json();
     const cards = Array.isArray(json) ? json : (json?.cards || []);
+
+    console.log("loadRawCards url=", url);
+    console.log("cards count=", cards.length);
 
     setRawCards(
       cards.map((c) => ({
@@ -249,7 +244,6 @@ async function loadRawCards() {
     );
   } catch (e) {
     console.error("Gagal load kad mentah:", e);
-    setRawCards([]); // optional, biar jelas kosong jika error
   }
 }
     async function loadCluster(opts = {}) {
