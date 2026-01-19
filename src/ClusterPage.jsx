@@ -35,14 +35,18 @@ const apiBase = String(API_BASE || "")
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("all"); // all | assigned | unassigned
 
-  // =========================
-  // Manual clustering state
-  // =========================
-  const [cus, setCus] = useState([]); // [{ id, title, notes }]
-  const [assignments, setAssignments] = useState({}); // { [cardId]: cuId }
+// =========================
+// Manual clustering state
+// =========================
 
-  // Abort fetch if user klik banyak kali
-  const abortRef = useRef(null);
+// Kad mentah dari Live Board (API /api/cards/:session)
+const [rawCards, setRawCards] = useState([]);
+
+const [cus, setCus] = useState([]); // [{ id, title, notes }]
+const [assignments, setAssignments] = useState({}); // { [cardId]: cuId }
+
+// Abort fetch if user klik banyak kali
+const abortRef = useRef(null);
 
   // =========================
   // Helpers
@@ -209,7 +213,32 @@ useEffect(() => {
   // =========================
   // Actions
   // =========================
-  async function loadCluster(opts = {}) {
+
+  async function loadRawCards() {
+  const sid = String(sessionId || "").trim();
+  if (!sid) return;
+
+  try {
+    const res = await fetch(
+      `${apiBase}/api/cards/${encodeURIComponent(sid)}`
+    );
+    const json = await res.json();
+
+    // Backend pulangkan array terus
+    const cards = Array.isArray(json) ? json : json?.cards || [];
+
+    setRawCards(
+      cards.map((c) => ({
+        id: String(c.id),
+        activity: String(c.name || c.activity || ""),
+        time: c.createdAt || c.time || "",
+      }))
+    );
+  } catch (e) {
+    console.error("Gagal load kad mentah:", e);
+  }
+}
+    async function loadCluster(opts = {}) {
     const silent = !!opts.silent;
     const sid = String(sessionId || "").trim();
     if (!sid) {
