@@ -1,4 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
+const API_BASE =
+  (import.meta?.env?.VITE_API_BASE && String(import.meta.env.VITE_API_BASE)) ||
+  "https://dacum-backend.onrender.com";
 
 // Local draft key (per session)
 function draftKey(sessionId) {
@@ -58,7 +61,9 @@ export default function System2CuEntry() {
 
   // CU list
   const [cus, setCus] = useState([]);
-
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState("");
+  
   const storageKey = useMemo(() => draftKey(meta.sessionId), [meta.sessionId]);
 
   // Load draft on first mount / when sessionId changes
@@ -162,7 +167,7 @@ export default function System2CuEntry() {
     );
   }
 
-function goNext() {
+async function confirmAndGoCompare() {
   // Basic validation minimal
   if (!cus.length) {
     alert("Tiada CU. Sila tambah sekurang-kurangnya 1 CU.");
@@ -180,11 +185,42 @@ function goNext() {
     return;
   }
 
-  // Simpan draf dahulu (sync) kemudian navigate ke Page 2.2
-  saveDraft();
+  setLoading(true);
+  setErr("");
 
-  const sid = meta.sessionId || "Masjid";
-  window.location.hash = `#/s2/compare?session=${encodeURIComponent(sid)}`;
+  try {
+    // 1) Simpan draf local dahulu
+    const payload = { savedAt: new Date().toISOString(), meta, cus };
+    localStorage.setItem(storageKey, JSON.stringify(payload));
+
+    // 2) Kumpul WA sebenar dari form (waTitle)
+    const waList = [];
+    for (const cu of cus || []) {
+      for (const a of cu.activities || []) {
+        const t = String(a?.waTitle || "").trim();
+        if (t) waList.push(t);
+      }
+    }
+
+    const sessionId = String(meta.sessionId || "Masjid").trim();
+
+    // 3) Seed ke backend supaya /api/myspike/compare nampak WA dalam sessions[sessionId]
+    const res = await fetch(`${API_BASE}/api/s2/seed-wa`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId, waList }),
+    });
+
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(json?.error || "Seed WA gagal");
+
+    // 4) Navigate ke Page 2.2
+    window.location.hash = `#/s2/compare?session=${encodeURIComponent(sessionId)}`;
+  } catch (e) {
+    setErr(String(e?.message || e));
+  } finally {
+    setLoading(false);
+  }
 }
 
 // ✅ Pastikan ini berada DI LUAR goNext() (level component)
@@ -470,16 +506,19 @@ const totalActivities = useMemo(
           Simpan Draf
         </button>
         <button
-          onClick={goNext}
+          onClick={confirmAndGoCompare}
+          disabled={loading}
           style={{
             padding: "10px 14px",
             border: "1px solid #111",
             background: "#111",
             color: "white",
             borderRadius: 12,
+            opacity: loading ? 0.7 : 1,
+            cursor: loading ? "not-allowed" : "pointer",
           }}
         >
-          Sahkan & Teruskan (MySPIKE Compare)
+          {loading ? "Seeding & Loading..." : "Sahkan & Teruskan (MySPIKE Compare)"}
         </button>
       </div>
     </div>
