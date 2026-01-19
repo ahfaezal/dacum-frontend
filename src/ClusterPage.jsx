@@ -230,7 +230,13 @@ async function loadRawCards() {
     if (!res.ok) throw new Error(`loadRawCards HTTP ${res.status}`);
 
     const json = await res.json();
-    const cards = Array.isArray(json) ? json : (json?.cards || []);
+    const cards =
+      (Array.isArray(json) && json) ||
+      (Array.isArray(json?.cards) && json.cards) ||
+      (Array.isArray(json?.data) && json.data) ||
+      (Array.isArray(json?.items) && json.items) ||
+      (Array.isArray(json?.result) && json.result) ||
+      [];
 
     console.log("loadRawCards url=", url);
     console.log("cards count=", cards.length);
