@@ -33,7 +33,7 @@ export default function System2Compare() {
   const [err, setErr] = useState("");
 
   // hasil compare dari backend
-  const [results, setResults] = useState([]);
+  const [data, setData] = useState([]);
 
   // hydrate sessionId dari query string (hash)
   useEffect(() => {
@@ -69,7 +69,7 @@ export default function System2Compare() {
 
       // ✅ BACKEND PULANG ARRAY TERUS
       const items = Array.isArray(json) ? json : [];
-      setItems(items);
+      setResults(items);
       setErr("");
 
       // Normalise (pastikan field wujud)
