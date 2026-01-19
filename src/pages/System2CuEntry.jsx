@@ -162,37 +162,36 @@ export default function System2CuEntry() {
     );
   }
 
-  function goNext() {
-    // Basic validation minimal
-    if (!cus.length) {
-      alert("Tiada CU. Sila tambah sekurang-kurangnya 1 CU.");
-      return;
-    }
-    const hasEmpty = cus.some(
-      (c) =>
-        !String(c.cuTitle || "").trim() ||
-        (c.activities || []).some((a) => !String(a.waTitle || "").trim())
-    );
-    if (hasEmpty) {
-      alert("Sila lengkapkan Nama CU dan Nama Aktiviti sebelum teruskan.");
-      return;
-    }
+function goNext() {
+  // Basic validation minimal
+  if (!cus.length) {
+    alert("Tiada CU. Sila tambah sekurang-kurangnya 1 CU.");
+    return;
+  }
 
-    // Navigate ke page comparison (kita buat selepas ini)
-    // Jika app guna HashRouter, URL jadi /#/s2/compare?session=Masjid
-    function confirmAndContinue() {
-    // 1. Simpan draf dahulu
-      saveDraft();
-
-    // 2. Pergi ke Page 2.2 – CU Basket Comparator
-    const sid = meta.sessionId || "Masjid";
-    window.location.hash = `#/s2/compare?session=${encodeURIComponent(sid)}`;
-    }
-
-  const totalActivities = useMemo(
-    () => cus.reduce((sum, c) => sum + (c.activities?.length || 0), 0),
-    [cus]
+  const hasEmpty = cus.some(
+    (c) =>
+      !String(c.cuTitle || "").trim() ||
+      (c.activities || []).some((a) => !String(a.waTitle || "").trim())
   );
+
+  if (hasEmpty) {
+    alert("Sila lengkapkan Nama CU dan Nama Aktiviti sebelum teruskan.");
+    return;
+  }
+
+  // Simpan draf dahulu (sync) kemudian navigate ke Page 2.2
+  saveDraft();
+
+  const sid = meta.sessionId || "Masjid";
+  window.location.hash = `#/s2/compare?session=${encodeURIComponent(sid)}`;
+}
+
+// ✅ Pastikan ini berada DI LUAR goNext() (level component)
+const totalActivities = useMemo(
+  () => cus.reduce((sum, c) => sum + (c.activities?.length || 0), 0),
+  [cus]
+);
 
   return (
     <div style={{ padding: 24, maxWidth: 1100, margin: "0 auto" }}>
