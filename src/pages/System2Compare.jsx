@@ -406,11 +406,29 @@ async function runCompare() {
             );
           })}
         </div>
-      ) : (
-        <div style={{ marginTop: 16, color: "#666" }}>
-          {result ? "Tiada result." : "Klik “Run AI Comparison” untuk mula."}
-        </div>
-      )}
-    </div>
-  );
+) : (
+  <div style={{ marginTop: 16, color: "#666" }}>
+    {!result ? (
+      "Klik “Run AI Comparison” untuk mula."
+    ) : (
+      <>
+        <div style={{ marginBottom: 8 }}>Tiada result berstruktur dipaparkan.</div>
+
+        {/* DEBUG: paparkan response sebenar backend */}
+        <pre
+          style={{
+            marginTop: 12,
+            padding: 12,
+            background: "#f6f6f6",
+            borderRadius: 12,
+            overflow: "auto",
+            fontSize: 12,
+          }}
+        >
+          {JSON.stringify(result, null, 2)}
+        </pre>
+      </>
+    )}
+  </div>
+);
 }
