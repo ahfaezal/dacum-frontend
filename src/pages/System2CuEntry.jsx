@@ -207,8 +207,13 @@ export default function System2CuEntry() {
       const res = await fetch(`${API_BASE}/api/s2/seed-wa`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId, waList }),
-      });
+        const waTitles = waList.map(x => x.waTitle);
+
+        body: JSON.stringify({
+          sessionId,
+          waList,      // versi objek (future-proof)
+          waTitles    // versi string (server lama)
+      }),
 
       const json = await res.json().catch(() => ({}));
       if (!res.ok || json?.ok === false) {
