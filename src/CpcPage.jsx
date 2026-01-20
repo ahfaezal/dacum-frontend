@@ -87,7 +87,7 @@ export default function CpcPage() {
               >
                 {(u.wa || u.activities || []).map((w) => (
                   <div
-                    key={w.waCode || w.id || w.waTitle}
+                    key={`${u.cuCode}-${w.waCode}`}
                     style={{
                       border: "1px solid #333",
                       background: "#d6eefc",
@@ -96,7 +96,7 @@ export default function CpcPage() {
                     }}
                   >
                     <div style={{ fontWeight: 700 }}>
-                      {w.waCode || ""}
+                      {u.cuCode}-{w.waCode}
                     </div>
                     <div>{w.waTitle || w.title || ""}</div>
                   </div>
