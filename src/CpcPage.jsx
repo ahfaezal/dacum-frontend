@@ -57,16 +57,6 @@ export default function CpcPage() {
       alignItems: "stretch",
     }}
   >
-    {(u.wa || u.activities || []).map((w) => (
-      <div
-        key={`${u.cuCode}-${w.waCode || w.id || w.waTitle}`}
-        style={{
-          border: "1px solid #333",
-          background: "#d6eefc",
-          padding: 10,
-          minHeight: 70,
-        }}
-      >
         <div style={{ fontWeight: 700 }}>
           {u.cuCode && w.waCode ? `${u.cuCode}-${w.waCode}` : (w.waCode || "")}
         </div>
