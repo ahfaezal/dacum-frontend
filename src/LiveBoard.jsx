@@ -1,14 +1,15 @@
 import React, { useEffect, useMemo, useState } from "react";
 
 const API_BASE =
-  (import.meta?.env?.VITE_API_BASE && String(import.meta.env.VITE_API_BASE)) ||
-  "https://dacum-backend.onrender.com";
+  import.meta.env.VITE_API_BASE || "https://dacum-backend.onrender.com";
 
 export default function LiveBoard({ onAgreed }) {
   const apiBase = useMemo(() => {
     const v = String(API_BASE || "").trim();
     if (!v) return "https://dacum-backend.onrender.com";
-    return v.replace("onrenderer.com", "onrender.com").replace(/\/+$/, "");
+    return v
+      .replace("onrenderer.com", "onrender.com")
+      .replace(/\/+$/, "");
   }, []);
 
   const [sessionId, setSessionId] = useState("Masjid");
@@ -16,103 +17,60 @@ export default function LiveBoard({ onAgreed }) {
   const [freeze, setFreeze] = useState(false);
 
   // Bahasa NOSS (ditetapkan fasilitator)
-  const [lang, setLang] = useState("MS"); // "MS" | "EN"
+  const [lang, setLang] = useState("MS"); // MS | EN
   const [langLocked, setLangLocked] = useState(false);
-  const [langMsg, setLangMsg] = useState("");
+  const [lockedAt, setLockedAt] = useState(null);
+  const [cfgErr, setCfgErr] = useState("");
 
   async function apiGet(path) {
-    const r = await fetch(`${apiBase}${path}`);
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(j?.error || j?.message || `GET ${path} -> ${r.status}`);
-    return j;
+    const res = await fetch(`${apiBase}${path}`);
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(json?.error || `GET ${path} -> ${res.status}`);
+    return json;
   }
 
   async function apiPost(path, body) {
-    const r = await fetch(`${apiBase}${path}`, {
+    const res = await fetch(`${apiBase}${path}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body || {}),
     });
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(j?.error || j?.message || `POST ${path} -> ${r.status}`);
-    return j;
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(json?.error || `POST ${path} -> ${res.status}`);
+    return json;
   }
 
-  // Load session config (lang, locked) bila session berubah
+  // Load config bila sessionId berubah
   useEffect(() => {
     let alive = true;
-    async function loadCfg() {
-      setLangMsg("");
+    async function loadConfig() {
+      setCfgErr("");
       const sid = String(sessionId || "").trim();
       if (!sid) return;
 
       try {
-        const cfg = await apiGet(`/api/session/config/${encodeURIComponent(sid)}`);
+        const cfg = await apiGet(
+          `/api/session/config/${encodeURIComponent(sid)}`
+        );
         if (!alive) return;
-        const newLang = String(cfg?.lang || "MS").toUpperCase();
-        setLang(newLang === "EN" ? "EN" : "MS");
+        const nextLang = String(cfg?.lang || "MS").toUpperCase();
+        setLang(nextLang === "EN" ? "EN" : "MS");
         setLangLocked(!!cfg?.langLocked);
+        setLockedAt(cfg?.lockedAt || null);
       } catch (e) {
-        // Kalau endpoint belum wujud/temporarily fail, jangan crash UI
         if (!alive) return;
-        setLangMsg(`Nota: Tak dapat load config bahasa (${String(e?.message || e)})`);
+        setCfgErr(String(e?.message || e));
       }
     }
-    loadCfg();
+    loadConfig();
     return () => {
       alive = false;
     };
   }, [apiBase, sessionId]);
 
-  async function changeLang(next) {
-    const sid = String(sessionId || "").trim();
-    if (!sid) return alert("Sila isi Session dulu.");
-
-    const nextLang = String(next || "").toUpperCase() === "EN" ? "EN" : "MS";
-    setLangMsg("");
-
-    try {
-      const out = await apiPost(`/api/session/config/${encodeURIComponent(sid)}`, { lang: nextLang });
-      setLang(out.lang === "EN" ? "EN" : "MS");
-      setLangLocked(!!out.langLocked);
-      setLangMsg(`Bahasa NOSS ditetapkan: ${out.lang}`);
-    } catch (e) {
-      setLangMsg(String(e?.message || e));
-      alert(String(e?.message || e));
-    }
-  }
-
-  async function goAgreed() {
-    const sid = String(sessionId || "").trim();
-    if (!sid) return alert("Sila isi Session dulu.");
-
-    // LOCK bahasa bila Agreed
-    setLangMsg("");
-    try {
-      const out = await apiPost(`/api/session/lock/${encodeURIComponent(sid)}`, {});
-      setLang(out.lang === "EN" ? "EN" : "MS");
-      setLangLocked(true);
-      setLangMsg(`Bahasa dikunci: ${out.lang}`);
-    } catch (e) {
-      // Jika lock endpoint belum ada, masih boleh teruskan (tapi Prof dah mahu lock — jadi kita alert)
-      setLangMsg(String(e?.message || e));
-      alert(`Gagal lock bahasa: ${String(e?.message || e)}`);
-      return;
-    }
-
-    onAgreed?.(sid);
-  }
-
-  function goFullscreen() {
-    const el = document.documentElement;
-    if (!document.fullscreenElement) el.requestFullscreen?.();
-    else document.exitFullscreen?.();
-  }
-
   // Poll LIVE cards (boleh di-freeze)
   useEffect(() => {
     if (freeze) return;
-
     let alive = true;
 
     async function tick() {
@@ -122,7 +80,10 @@ export default function LiveBoard({ onAgreed }) {
 
       try {
         const r = await fetch(`${apiBase}/api/cards/${encodeURIComponent(sid)}`);
-        const j = await r.json().catch(() => ({}));
+        const j = await r.json().catch(() => null);
+        if (!alive) return;
+
+        // support lama/baru
         if (j && j.ok && Array.isArray(j.items)) setCards(j.items);
         else if (Array.isArray(j)) setCards(j);
       } catch {}
@@ -130,81 +91,159 @@ export default function LiveBoard({ onAgreed }) {
 
     tick();
     const t = setInterval(tick, 1200);
-
     return () => {
       alive = false;
       clearInterval(t);
     };
   }, [apiBase, sessionId, freeze]);
 
-  return (
-    <div style={{ padding: 16, fontFamily: "system-ui, Arial" }}>
-      <h2 style={{ margin: "0 0 10px" }}>Live Board (DACUM Card) — Fasilitator</h2>
+  async function changeLang(next) {
+    const sid = String(sessionId || "").trim();
+    if (!sid) return alert("Sila isi Session dulu.");
 
-      <div style={{ fontSize: 13, opacity: 0.9, marginBottom: 10 }}>
-        Status: <b>{freeze ? "FREEZE" : "LIVE"}</b> | API: <code>{apiBase}</code> | Session: <b>{sessionId}</b>
+    const nextLang = String(next || "").toUpperCase().trim();
+    if (!["MS", "EN"].includes(nextLang)) return;
+
+    if (langLocked) {
+      alert("Bahasa sudah dikunci selepas Agreed. Tidak boleh ubah lagi.");
+      return;
+    }
+
+    setCfgErr("");
+    setLang(nextLang);
+    try {
+      const out = await apiPost(
+        `/api/session/config/${encodeURIComponent(sid)}`,
+        { lang: nextLang }
+      );
+      setLang(String(out?.lang || nextLang).toUpperCase());
+      setLangLocked(!!out?.langLocked);
+      setLockedAt(out?.lockedAt || null);
+    } catch (e) {
+      setCfgErr(String(e?.message || e));
+      alert(String(e?.message || e));
+    }
+  }
+
+  async function goAgreed() {
+    const sid = String(sessionId || "").trim();
+    if (!sid) return alert("Sila isi Session dulu.");
+
+    // 1) Pastikan config lang disimpan (kalau belum lock)
+    try {
+      if (!langLocked) {
+        await apiPost(`/api/session/config/${encodeURIComponent(sid)}`, {
+          lang,
+        });
+      }
+    } catch (e) {
+      // kalau gagal pun, kita masih boleh proceed lock (atau fail lock)
+    }
+
+    // 2) Lock bahasa (wajib sebelum clustering)
+    try {
+      const lock = await apiPost(`/api/session/lock/${encodeURIComponent(sid)}`);
+      setLang(String(lock?.lang || lang).toUpperCase());
+      setLangLocked(true);
+      setLockedAt(lock?.lockedAt || new Date().toISOString());
+    } catch (e) {
+      // Jika sudah lock, kita benarkan proceed (anggap sudah agreed sebelum ini)
+      const msg = String(e?.message || e);
+      if (!/sudah dikunci|locked/i.test(msg)) {
+        alert(msg);
+        return;
+      }
+    }
+
+    // 3) Navigate ke clustering
+    onAgreed?.(sid);
+  }
+
+  function goFullscreen() {
+    const el = document.documentElement;
+    if (!document.fullscreenElement) el.requestFullscreen?.();
+    else document.exitFullscreen?.();
+  }
+
+  const langLabel =
+    lang === "EN" ? "English (EN)" : "Bahasa Melayu (MS)";
+  const lockText = langLocked
+    ? `DIKUNCI${lockedAt ? ` @ ${lockedAt}` : ""}`
+    : "BELUM LOCK";
+
+  return (
+    <div style={{ padding: 18, maxWidth: 1200, margin: "0 auto" }}>
+      <h1 style={{ fontFamily: "serif", marginBottom: 10 }}>
+        Live Board (DACUM Card) — Fasilitator
+      </h1>
+
+      <div style={{ marginBottom: 14 }}>
+        <div style={{ fontSize: 14, opacity: 0.8 }}>
+          Status: <b>{freeze ? "FREEZE" : "LIVE"}</b> | API:{" "}
+          <code>{apiBase}</code> | Session: <b>{sessionId}</b>
+        </div>
+        <div style={{ fontSize: 14, marginTop: 4, opacity: 0.85 }}>
+          Bahasa NOSS: <b>{langLabel}</b> | Lock: <b>{lockText}</b>
+        </div>
+        {cfgErr ? (
+          <div style={{ marginTop: 6, color: "#b91c1c", fontSize: 13 }}>
+            Config error: {cfgErr}
+          </div>
+        ) : null}
       </div>
 
       {/* TAJUK / SESSION */}
-      <div style={{ padding: 12, border: "1px solid #ddd", borderRadius: 12, marginBottom: 12 }}>
-        <div style={{ fontWeight: 700, marginBottom: 8 }}>TAJUK NOSS / SESSION</div>
+      <div
+        style={{
+          border: "1px solid #ddd",
+          borderRadius: 14,
+          padding: 14,
+          marginBottom: 14,
+        }}
+      >
+        <div style={{ fontWeight: 700, marginBottom: 8 }}>
+          TAJUK NOSS / SESSION
+        </div>
 
         <input
           value={sessionId}
           onChange={(e) => setSessionId(e.target.value)}
-          placeholder="Contoh: Masjid / Office"
+          placeholder="cth: Masjid / Office"
           style={{
             width: "100%",
             padding: "10px 12px",
             borderRadius: 10,
             border: "1px solid #ccc",
-            marginBottom: 12,
+            marginBottom: 10,
           }}
         />
 
-        {/* Bahasa NOSS */}
-        <div style={{ marginBottom: 10 }}>
-          <div style={{ fontWeight: 700, marginBottom: 6 }}>
-            Bahasa NOSS (ditetapkan fasilitator){" "}
-            {langLocked ? <span style={{ fontWeight: 600 }}>(Locked)</span> : null}
+        {/* Bahasa NOSS (ditetapkan fasilitator) */}
+        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+          <div style={{ fontSize: 14, fontWeight: 600 }}>Bahasa NOSS:</div>
+          <select
+            value={lang}
+            disabled={langLocked}
+            onChange={(e) => changeLang(e.target.value)}
+            style={{
+              padding: "8px 10px",
+              borderRadius: 10,
+              border: "1px solid #ccc",
+              cursor: langLocked ? "not-allowed" : "pointer",
+              minWidth: 220,
+            }}
+          >
+            <option value="MS">Bahasa Melayu (MS)</option>
+            <option value="EN">English (EN)</option>
+          </select>
+
+          <div style={{ fontSize: 12, opacity: 0.75 }}>
+            Panel boleh input BM/EN. Output akan ikut bahasa ini selepas Agreed.
           </div>
-
-          <label style={{ marginRight: 14 }}>
-            <input
-              type="radio"
-              name="lang"
-              checked={lang === "MS"}
-              disabled={langLocked}
-              onChange={() => changeLang("MS")}
-            />{" "}
-            Bahasa Melayu (MS)
-          </label>
-
-          <label>
-            <input
-              type="radio"
-              name="lang"
-              checked={lang === "EN"}
-              disabled={langLocked}
-              onChange={() => changeLang("EN")}
-            />{" "}
-            English (EN)
-          </label>
-
-          <div style={{ marginTop: 6, fontSize: 12, opacity: 0.85 }}>
-            Panel bebas masukkan aktiviti BM/EN. Selepas <b>Agreed</b>, semua hasil & edit hendaklah ikut bahasa yang
-            ditetapkan.
-          </div>
-
-          {langMsg ? (
-            <div style={{ marginTop: 6, fontSize: 12, color: "#111" }}>
-              {langMsg}
-            </div>
-          ) : null}
         </div>
 
-        {/* Freeze + Fullscreen + Agreed */}
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+        {/* Freeze + Fullscreen */}
+        <div style={{ marginTop: 12, display: "flex", gap: 10 }}>
           <button
             onClick={() => setFreeze((f) => !f)}
             style={{
@@ -226,48 +265,82 @@ export default function LiveBoard({ onAgreed }) {
               borderRadius: 10,
               border: "1px solid #111",
               background: "#fff",
-              color: "#111",
               cursor: "pointer",
             }}
           >
             Fullscreen
           </button>
-
-          <button
-            onClick={goAgreed}
-            style={{
-              padding: "8px 14px",
-              borderRadius: 10,
-              border: "1px solid #16a34a",
-              background: "#16a34a",
-              color: "#fff",
-              cursor: "pointer",
-              marginLeft: "auto",
-            }}
-          >
-            Agreed (Ke Clustering)
-          </button>
         </div>
 
-        <div style={{ marginTop: 8, fontSize: 12, opacity: 0.8 }}>
+        <div style={{ marginTop: 8, fontSize: 12, opacity: 0.7 }}>
           Nota: Freeze digunakan semasa perbincangan & pengesahan akhir.
         </div>
       </div>
 
       {/* SENARAI KAD */}
-      <div style={{ padding: 12, border: "1px solid #ddd", borderRadius: 12 }}>
-        <div style={{ fontWeight: 700, marginBottom: 10 }}>SENARAI KAD (LIVE)</div>
+      <div
+        style={{
+          border: "1px solid #ddd",
+          borderRadius: 14,
+          padding: 14,
+          position: "relative",
+        }}
+      >
+        <div style={{ fontWeight: 700, marginBottom: 10 }}>
+          SENARAI KAD (LIVE)
+        </div>
 
-        {cards.map((c, idx) => (
-          <div key={String(c.id || idx)} style={{ padding: 10, border: "1px solid #eee", borderRadius: 10, marginBottom: 8 }}>
-            <div style={{ fontWeight: 600 }}>{String(c.activity || c.name || c.title || "").trim()}</div>
-            <div style={{ fontSize: 12, opacity: 0.8 }}>{c.time || c.createdAt || ""}</div>
-          </div>
-        ))}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+            gap: 10,
+            minHeight: 160,
+          }}
+        >
+          {cards.map((c) => (
+            <div
+              key={String(c.id)}
+              style={{
+                border: "1px solid #eee",
+                borderRadius: 12,
+                padding: 12,
+                background: "#fafafa",
+              }}
+            >
+              <div style={{ fontWeight: 700 }}>
+                {String(c.activity || c.name || "").trim()}
+              </div>
+              <div style={{ fontSize: 12, opacity: 0.7, marginTop: 6 }}>
+                {c.time}
+              </div>
+            </div>
+          ))}
 
-        {cards.length === 0 ? (
-          <div style={{ opacity: 0.8 }}>Belum ada kad untuk session ini.</div>
-        ) : null}
+          {cards.length === 0 && (
+            <div style={{ fontSize: 14, opacity: 0.75 }}>
+              Belum ada kad untuk session ini.
+            </div>
+          )}
+        </div>
+
+        {/* AGREED – DI BAWAH SENARAI KAD */}
+        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
+          <button
+            onClick={goAgreed}
+            style={{
+              padding: "10px 16px",
+              borderRadius: 12,
+              border: "1px solid #111",
+              background: "#111",
+              color: "#fff",
+              cursor: "pointer",
+              fontWeight: 700,
+            }}
+          >
+            Agreed (Ke Clustering)
+          </button>
+        </div>
       </div>
     </div>
   );
