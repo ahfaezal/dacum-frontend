@@ -11,6 +11,8 @@ export default function CpcPage() {
   const [data, setData] = useState(null);
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
+  const [compact, setCompact] = useState(false);
+  const [freeze, setFreeze] = useState(true);
 
   async function load() {
     setLoading(true);
@@ -45,6 +47,35 @@ export default function CpcPage() {
     <div style={{ padding: 16, fontFamily: "Georgia, serif" }}>
       <h2 style={{ margin: "0 0 12px" }}>Carta Profil Kompetensi (CPC)</h2>
 
+{!compact && (
+  <div
+    style={{
+      display: "grid",
+      gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+      gap: 10,
+      padding: 10,
+      alignItems: "stretch",
+    }}
+  >
+    {(u.wa || u.activities || []).map((w) => (
+      <div
+        key={`${u.cuCode}-${w.waCode || w.id || w.waTitle}`}
+        style={{
+          border: "1px solid #333",
+          background: "#d6eefc",
+          padding: 10,
+          minHeight: 70,
+        }}
+      >
+        <div style={{ fontWeight: 700 }}>
+          {u.cuCode && w.waCode ? `${u.cuCode}-${w.waCode}` : (w.waCode || "")}
+        </div>
+        <div>{w.waTitle || w.title || ""}</div>
+      </div>
+    ))}
+  </div>
+)}
+      
       <div style={{ border: "1px solid #ddd", padding: 12, marginBottom: 12 }}>
         <div>
           <b>Session:</b> {data.sessionId}
