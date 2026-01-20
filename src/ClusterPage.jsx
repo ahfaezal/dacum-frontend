@@ -110,7 +110,7 @@ async function ensureClusterResult(sessionId) {
       const cardsItems = Array.isArray(cardsRes?.items) ? cardsRes.items : cardsRes; // support lama/baru
 
       // 3) Ambil cluster result (mesti dah run /api/cluster/run sebelum ni)
-      const clusterRes = await apiGet(`/api/cluster/result/${encodeURIComponent(sid)}`);
+      const clusterRes = await ensureClusterResult(sid);
 
       // 4) Bentuk cus[]
       const cus = buildCusFromClusterAndCards(clusterRes, cardsItems);
