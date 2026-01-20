@@ -10,6 +10,7 @@ export default function ClusterPage() {
   const [compareErr, setCompareErr] = useState("");
   const [compareRes, setCompareRes] = useState(null);
   const [clusterRes, setClusterRes] = useState(null);
+  const [cardsItems, setCardsItems] = useState([]);
 
   async function apiGet(path) {
     const res = await fetch(`${API_BASE}${path}`);
@@ -108,7 +109,8 @@ async function ensureClusterResult(sessionId) {
 
       // 2) Ambil cards session
       const cardsRes = await apiGet(`/api/cards/${encodeURIComponent(sid)}`);
-      const cardsItems = Array.isArray(cardsRes?.items) ? cardsRes.items : cardsRes; // support lama/baru
+      const items = Array.isArray(cardsRes?.items) ? cardsRes.items : cardsRes; // support lama/baru
+      setCardsItems(items);
 
       // 3) Ambil cluster result (mesti dah run /api/cluster/run sebelum ni)
       const clusterRes = await ensureClusterResult(sid);
