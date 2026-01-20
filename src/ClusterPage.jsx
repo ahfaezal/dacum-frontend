@@ -29,6 +29,29 @@ export default function ClusterPage() {
     return json;
   }
 
+async function ensureClusterResult(sessionId) {
+  const sid = String(sessionId || "").trim();
+  if (!sid) throw new Error("sessionId kosong");
+
+  // 1) cuba ambil result cluster sedia ada
+  const urlGet = `/api/cluster/result/${encodeURIComponent(sid)}`;
+
+  try {
+    return await apiGet(urlGet);
+  } catch (e) {
+    const msg = String(e?.message || e);
+
+    // jika bukan 404, jangan auto-run (biar nampak error sebenar)
+    if (!msg.includes("-> 404")) throw e;
+  }
+
+  // 2) kalau 404, auto-run cluster
+  await apiPost("/api/cluster/run", { sessionId: sid });
+
+  // 3) ambil semula result
+  return await apiGet(urlGet);
+}
+  
   async function ensureMyspikeIndex() {
     const st = await apiGet("/api/myspike/index/status");
     const total = Number(st?.meta?.totalCU || 0);
