@@ -9,6 +9,7 @@ export default function ClusterPage() {
   const [compareLoading, setCompareLoading] = useState(false);
   const [compareErr, setCompareErr] = useState("");
   const [compareRes, setCompareRes] = useState(null);
+  const [clusterRes, setClusterRes] = useState(null);
 
   async function apiGet(path) {
     const res = await fetch(`${API_BASE}${path}`);
@@ -111,9 +112,10 @@ async function ensureClusterResult(sessionId) {
 
       // 3) Ambil cluster result (mesti dah run /api/cluster/run sebelum ni)
       const clusterRes = await ensureClusterResult(sid);
+      setClusterRes(clRes);
 
       // 4) Bentuk cus[]
-      const cus = buildCusFromClusterAndCards(clusterRes, cardsItems);
+      const cus = buildCusFromClusterAndCards(clRes, cardsItems);
       if (!cus.length) {
         throw new Error(
           "Tiada CU untuk dibandingkan. Pastikan anda sudah buat clustering dan kad ada teks."
@@ -168,6 +170,25 @@ async function ensureClusterResult(sessionId) {
         </div>
       ) : null}
 
+{clusterRes ? (
+  <div style={{ marginTop: 12, padding: 10, border: "1px solid #ddd" }}>
+    <b>Hasil Clustering (CU iNOSS)</b>
+
+    <div style={{ marginTop: 8 }}>
+      {(clusterRes.clusters || []).map((c, i) => (
+        <div key={i} style={{ marginBottom: 10 }}>
+          <div>
+            <b>
+              {c.suggestedCU?.title || c.title || `CU ${i + 1}`}
+            </b>{" "}
+            — {Array.isArray(c.cardIds) ? c.cardIds.length : 0} kad
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+) : null}
+      
       {compareRes ? (
         <div style={{ marginTop: 12 }}>
           <div style={{ marginBottom: 10 }}>
