@@ -47,25 +47,6 @@ export default function CpcPage() {
     <div style={{ padding: 16, fontFamily: "Georgia, serif" }}>
       <h2 style={{ margin: "0 0 12px" }}>Carta Profil Kompetensi (CPC)</h2>
 
-{!compact && (
-  <div
-    style={{
-      display: "grid",
-      gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-      gap: 10,
-      padding: 10,
-      alignItems: "stretch",
-    }}
-  >
-        <div style={{ fontWeight: 700 }}>
-          {u.cuCode && w.waCode ? `${u.cuCode}-${w.waCode}` : (w.waCode || "")}
-        </div>
-        <div>{w.waTitle || w.title || ""}</div>
-      </div>
-    ))}
-  </div>
-)}
-      
       <div style={{ border: "1px solid #ddd", padding: 12, marginBottom: 12 }}>
         <div>
           <b>Session:</b> {data.sessionId}
