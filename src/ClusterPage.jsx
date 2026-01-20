@@ -175,16 +175,34 @@ async function ensureClusterResult(sessionId) {
     <b>Hasil Clustering (CU iNOSS)</b>
 
     <div style={{ marginTop: 8 }}>
-      {(clusterRes.clusters || []).map((c, i) => (
-        <div key={i} style={{ marginBottom: 10 }}>
-          <div>
-            <b>
-              {c.suggestedCU?.title || c.title || `CU ${i + 1}`}
-            </b>{" "}
-            — {Array.isArray(c.cardIds) ? c.cardIds.length : 0} kad
+      {(clusterRes.clusters || []).map((c, i) => {
+        const cuTitle =
+          c.suggestedCU?.title || c.title || `CU ${i + 1}`;
+
+        const waList = (Array.isArray(c.cardIds) ? c.cardIds : [])
+          .map((id) =>
+            cardsItems.find((x) => x.id === id)
+          )
+          .filter(Boolean);
+
+        return (
+          <div key={i} style={{ marginBottom: 14 }}>
+            <div>
+              <b>{cuTitle}</b> — {waList.length} kad
+            </div>
+
+            {waList.length > 0 && (
+              <ul style={{ marginTop: 6, marginLeft: 18 }}>
+                {waList.map((wa, idx) => (
+                  <li key={idx}>
+                    {wa.activity || wa.title || wa.name}
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   </div>
 ) : null}
