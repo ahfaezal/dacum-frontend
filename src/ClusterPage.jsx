@@ -112,10 +112,10 @@ async function ensureClusterResult(sessionId) {
 
       // 3) Ambil cluster result (mesti dah run /api/cluster/run sebelum ni)
       const clusterRes = await ensureClusterResult(sid);
-      setClusterRes(clRes);
+      setClusterRes(clusterRes);
 
       // 4) Bentuk cus[]
-      const cus = buildCusFromClusterAndCards(clRes, cardsItems);
+      const cus = buildCusFromClusterAndCards(clusterRes, cardsItems);
       if (!cus.length) {
         throw new Error(
           "Tiada CU untuk dibandingkan. Pastikan anda sudah buat clustering dan kad ada teks."
