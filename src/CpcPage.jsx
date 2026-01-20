@@ -44,8 +44,32 @@ export default function CpcPage() {
   const units = data.units || data.cus || [];
 
   return (
-    <div style={{ padding: 16, fontFamily: "Georgia, serif" }}>
-      <h2 style={{ margin: "0 0 12px" }}>Carta Profil Kompetensi (CPC)</h2>
+  <>
+    <style>{`
+      @media print {
+        @page {
+          size: A4 landscape;
+          margin: 12mm;
+        }
+
+        body {
+          margin: 0;
+          -webkit-print-color-adjust: exact;
+          print-color-adjust: exact;
+        }
+
+        .no-print {
+          display: none !important;
+        }
+
+        .print-page {
+          padding: 0;
+        }
+      }
+    `}</style>
+
+      <div className="print-page" style={{ padding: 16, fontFamily: "Georgia, serif" }}>
+        <h2 style={{ margin: "0 0 12px" }}>Carta Profil Kompetensi (CPC)</h2>
 
       <div style={{ border: "1px solid #ddd", padding: 12, marginBottom: 12 }}>
         <div>
