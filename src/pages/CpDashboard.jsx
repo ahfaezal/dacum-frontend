@@ -51,9 +51,10 @@ export default function CpDashboard() {
       const j = await r.json();
       if (!r.ok) throw new Error(j?.error || "Gagal jana draft CP");
       // pergi ke editor
-      window.location.href = `/?page=cp-editor&session=${encodeURIComponent(
+      window.location.href = `/#/cp-editor?session=${encodeURIComponent(
         sessionId
       )}&cu=${encodeURIComponent(cuId)}`;
+      
     } catch (e) {
       setErr(String(e));
     } finally {
