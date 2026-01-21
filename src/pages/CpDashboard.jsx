@@ -57,7 +57,9 @@ function extractCuList(cpc) {
  * TIADA auto-generate "C01" lagi.
  */
 function getCuCodeCanonical(cu) {
-  return String(cu?.cuCode || cu?.cuId || cu?.id || cu?.code || "").trim();
+    return String(cu?.cuCode || cu?.cuId || cu?.id || cu?.code || "")
+    .trim()
+    .toLowerCase();
 }
 
 /**
@@ -124,7 +126,7 @@ export default function CpDashboard() {
    * LOCKED: Hantar cuCode (bukan auto-generate C01, bukan idx)
    */
   async function generateDraft(cuCode) {
-    const cuCodeCanon = String(cuCode || "").trim();
+    const cuCodeCanon = String(cuCode || "").trim().toLowerCase();
     if (!sessionId || !cuCodeCanon) {
       setErr("CU Code tidak sah (tiada cuCode/cuId dalam CPC).");
       return;
