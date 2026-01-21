@@ -4,10 +4,25 @@ const API_BASE =
   (import.meta?.env?.VITE_API_BASE && String(import.meta.env.VITE_API_BASE)) ||
   "https://dacum-backend.onrender.com";
 
+function getQueryParam(name) {
+  // 1) normal query: ?session=...
+  const s = new URLSearchParams(window.location.search);
+  const v1 = s.get(name);
+  if (v1) return v1;
+
+  // 2) hash query: #/cp?session=...
+  const h = window.location.hash || "";
+  const qIndex = h.indexOf("?");
+  if (qIndex === -1) return "";
+  const qs = h.slice(qIndex + 1);
+  const hParams = new URLSearchParams(qs);
+  return hParams.get(name) || "";
+}
+
 export default function CpEditor() {
   const params = new URLSearchParams(window.location.search);
-  const sessionId = params.get("session") || "";
-  const cuId = params.get("cu") || "";
+  const sessionId = getQueryParam("session");
+  const cuId = getQueryParam("cu");
 
   const [cp, setCp] = useState(null);
   const [err, setErr] = useState("");
