@@ -156,7 +156,7 @@ export default function CpDashboard() {
   }
 
   function goEdit(cuCode) {
-    const cuCodeCanon = String(cuCode || "").trim();
+    const cuCodeCanon = String(cuCode || "").trim().toLowerCase();
     if (!sessionId || !cuCodeCanon) {
       setErr("CU Code tidak sah (tiada cuCode/cuId dalam CPC).");
       return;
