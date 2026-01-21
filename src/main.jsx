@@ -7,17 +7,36 @@ import PanelPage from "./PanelPage.jsx";
 import ClusterPage from "./ClusterPage.jsx";
 import CpcPage from "./CpcPage.jsx";
 
+// FASA 3 (CP)
+import CpDashboard from "./pages/CpDashboard.jsx";
+import CpEditor from "./pages/CpEditor.jsx";
+
 /**
  * Router ringkas guna hash (#)
  * Elak react-router untuk deploy Vercel yang laju & stabil
+ *
+ * Routing asal:
+ *  - #/board   -> LiveBoard
+ *  - #/panel   -> PanelPage
+ *  - #/cluster -> ClusterPage
+ *  - #/cpc     -> CpcPage
+ *
+ * Tambahan Fasa 3:
+ *  - #/cp         -> CpDashboard
+ *  - #/cp-editor  -> CpEditor
  */
 function Router() {
   const hash = window.location.hash || "";
 
+  // ===== ROUTES (HASH) =====
   if (hash.startsWith("#/board")) return <LiveBoard />;
   if (hash.startsWith("#/panel")) return <PanelPage />;
   if (hash.startsWith("#/cluster")) return <ClusterPage />;
   if (hash.startsWith("#/cpc")) return <CpcPage />;
+
+  // FASA 3: CP
+  if (hash.startsWith("#/cp-editor")) return <CpEditor />;
+  if (hash.startsWith("#/cp")) return <CpDashboard />;
 
   /**
    * DEFAULT:
@@ -28,7 +47,6 @@ function Router() {
   if (params.get("session")) {
     return <CpcPage />;
   }
-
   return <App />;
 }
 
