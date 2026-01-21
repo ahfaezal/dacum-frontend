@@ -57,7 +57,7 @@ function extractCuList(cpc) {
  * TIADA auto-generate "C01" lagi.
  */
 function getCuCodeCanonical(cu) {
-    return String(cu?.cuCode || cu?.cuId || cu?.id || cu?.code || "")
+  return String(cu?.cuCode || cu?.cuId || cu?.id || cu?.code || "")
     .trim()
     .toLowerCase();
 }
@@ -121,80 +121,10 @@ export default function CpDashboard() {
     }
   }
 
-/**
- * Generate Draft CP
- * LOCKED: Hantar cuCode (bukan auto-generate C01, bukan idx)
- */
-async function generateDraft(cuCode) {
-  const cuCodeCanon = String(cuCode || "").trim().toLowerCase();
-  if (!sessionId || !cuCodeCanon) {
-    setErr("CU Code tidak sah (tiada cuCode/cuId dalam CPC).");
-    return;
-  }
-
-  try {
-    setBusyCu(cuCodeCanon);
-
-    // cari CU penuh dari CPC
-    const cu =
-      cpc?.cus?.find((x) => String(x.cuCode).toLowerCase() === cuCodeCanon) ||
-      cpc?.cuList?.find((x) => String(x.cuCode).toLowerCase() === cuCodeCanon);
-
-    if (!cu) {
-      throw new Error("CU tidak ditemui dalam CPC.");
-    }
-
-    const waList = (cu.activities || [])
-      .map((a) => String(a.waTitle || "").trim())
-      .filter(Boolean);
-
-    // 1️⃣ jana draft di backend
-    const r = await fetch(`${API_BASE}/api/cp/draft`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        sessionId,
-        cuCode: cuCodeCanon,
-        cuTitle: cu.cuTitle,
-        waList,
-      }),
-    });
-
-    if (!r.ok) {
-      const t = await r.text().catch(() => "");
-      throw new Error(`Gagal generate draft (${r.status}) ${t}`);
-    }
-
-    const data = await r.json().catch(() => ({}));
-
-    // 2️⃣ simpan draft sementara (untuk CP Editor)
-    sessionStorage.setItem(
-      `cpDraft:${sessionId}:${cuCodeCanon}`,
-      JSON.stringify({
-        sessionId,
-        cuCode: cuCodeCanon,
-        cuTitle: cu.cuTitle,
-        waList,
-        ...data,
-        generatedAt: new Date().toISOString(),
-      })
-    );
-
-    // 3️⃣ redirect ke CP Editor (INI YANG BUAT ADA RESPON)
-    window.location.hash =
-      `#/cp-editor?session=${encodeURIComponent(sessionId)}&cu=${encodeURIComponent(cuCodeCanon)}&fromDraft=1`;
-
-  } catch (e) {
-    console.error(e);
-    setErr(String(e.message || e));
-  } finally {
-    setBusyCu("");
-  }
-}
-  
   /**
    * Generate Draft CP
    * LOCKED: Hantar cuCode (bukan auto-generate C01, bukan idx)
+   * Behaviour: POST draft -> simpan sessionStorage -> reload ke cp-editor
    */
   async function generateDraft(cuCode) {
     const cuCodeCanon = String(cuCode || "").trim().toLowerCase();
@@ -205,21 +135,53 @@ async function generateDraft(cuCode) {
 
     setBusyCu(cuCodeCanon);
     setErr("");
+
     try {
+      // Cari CU berdasarkan CPC (kalis peluru ikut extractCuList)
+      const cuArr = extractCuList(cpc);
+      const cu = (cuArr || []).find((x) => getCuCodeCanonical(x) === cuCodeCanon);
+      if (!cu) throw new Error("CU tidak ditemui dalam CPC.");
+
+      const cuTitle = getCuTitle(cu);
+      const waObjs = extractWaListFromCu(cu) || [];
+      const waList = waObjs.map(getWaTitle).map((s) => String(s || "").trim()).filter(Boolean);
+
+      // 1) Jana draft di backend
       const r = await fetch(`${API_BASE}/api/cp/draft`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        // ✅ ikut LOCKED spec: backend CPC guna cuCode
-        body: JSON.stringify({ sessionId, cuCode: cuCodeCanon }),
+        body: JSON.stringify({
+          sessionId,
+          cuCode: cuCodeCanon,
+          cuTitle,
+          waList,
+        }),
       });
-      const j = await r.json();
+
+      const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j?.error || "Gagal jana draft CP");
 
-      // Pergi ke editor (HASH routing)
+      // 2) Simpan draft (optional) untuk CpEditor load cepat
+      try {
+        sessionStorage.setItem(
+          `cpDraft:${sessionId}:${cuCodeCanon}`,
+          JSON.stringify({
+            sessionId,
+            cuCode: cuCodeCanon,
+            cuTitle,
+            waList,
+            ...j,
+            generatedAt: new Date().toISOString(),
+          })
+        );
+      } catch (e) {}
+
+      // 3) Pergi ke editor (FULL reload - paling pasti)
       window.location.href = `/#/cp-editor?session=${encodeURIComponent(
         sessionId
-      )}&cu=${encodeURIComponent(cuCodeCanon)}`;
+      )}&cu=${encodeURIComponent(cuCodeCanon)}&fromDraft=1`;
     } catch (e) {
+      console.error(e);
       setErr(String(e?.message || e));
     } finally {
       setBusyCu("");
@@ -324,8 +286,8 @@ async function generateDraft(cuCode) {
                 fontSize: 13,
               }}
             >
-              Ada CU yang <b>tiada</b> <code>cuCode</code>/<code>cuId</code> dalam CPC.{" "}
-              Sistem <b>tidak</b> akan auto-generate ID kerana kita lock “ikut CPC”.
+              Ada CU yang <b>tiada</b> <code>cuCode</code>/<code>cuId</code> dalam CPC. Sistem{" "}
+              <b>tidak</b> akan auto-generate ID kerana kita lock “ikut CPC”.
             </div>
           )}
 
@@ -357,7 +319,6 @@ async function generateDraft(cuCode) {
                       {cuDisplay}: {cuTitle || <span style={{ opacity: 0.7 }}>(tiada tajuk)</span>}
                     </div>
 
-                    {/* show canonical code (debug) */}
                     <div style={{ fontSize: 12, opacity: 0.75, marginTop: 4 }}>
                       <b>CU Code (CPC):</b>{" "}
                       {cuCodeCanon ? (
@@ -399,7 +360,7 @@ async function generateDraft(cuCode) {
                     </div>
                     <ul style={{ margin: 0, paddingLeft: 18 }}>
                       {waList.map((wa, wIdx) => {
-                        const waIdCanon = getWaIdCanonical(wa); // contoh: "w01"
+                        const waIdCanon = getWaIdCanonical(wa);
                         const waTitle = getWaTitle(wa);
                         const waDisplay = displayCode(waIdCanon) || `(WA#${wIdx + 1} tiada ID)`;
                         const waInvalid = !waIdCanon;
