@@ -121,6 +121,77 @@ export default function CpDashboard() {
     }
   }
 
+/**
+ * Generate Draft CP
+ * LOCKED: Hantar cuCode (bukan auto-generate C01, bukan idx)
+ */
+async function generateDraft(cuCode) {
+  const cuCodeCanon = String(cuCode || "").trim().toLowerCase();
+  if (!sessionId || !cuCodeCanon) {
+    setErr("CU Code tidak sah (tiada cuCode/cuId dalam CPC).");
+    return;
+  }
+
+  try {
+    setBusyCu(cuCodeCanon);
+
+    // cari CU penuh dari CPC
+    const cu =
+      cpc?.cus?.find((x) => String(x.cuCode).toLowerCase() === cuCodeCanon) ||
+      cpc?.cuList?.find((x) => String(x.cuCode).toLowerCase() === cuCodeCanon);
+
+    if (!cu) {
+      throw new Error("CU tidak ditemui dalam CPC.");
+    }
+
+    const waList = (cu.activities || [])
+      .map((a) => String(a.waTitle || "").trim())
+      .filter(Boolean);
+
+    // 1️⃣ jana draft di backend
+    const r = await fetch(`${API_BASE}/api/cp/draft`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sessionId,
+        cuCode: cuCodeCanon,
+        cuTitle: cu.cuTitle,
+        waList,
+      }),
+    });
+
+    if (!r.ok) {
+      const t = await r.text().catch(() => "");
+      throw new Error(`Gagal generate draft (${r.status}) ${t}`);
+    }
+
+    const data = await r.json().catch(() => ({}));
+
+    // 2️⃣ simpan draft sementara (untuk CP Editor)
+    sessionStorage.setItem(
+      `cpDraft:${sessionId}:${cuCodeCanon}`,
+      JSON.stringify({
+        sessionId,
+        cuCode: cuCodeCanon,
+        cuTitle: cu.cuTitle,
+        waList,
+        ...data,
+        generatedAt: new Date().toISOString(),
+      })
+    );
+
+    // 3️⃣ redirect ke CP Editor (INI YANG BUAT ADA RESPON)
+    window.location.hash =
+      `#/cp-editor?session=${encodeURIComponent(sessionId)}&cu=${encodeURIComponent(cuCodeCanon)}&fromDraft=1`;
+
+  } catch (e) {
+    console.error(e);
+    setErr(String(e.message || e));
+  } finally {
+    setBusyCu("");
+  }
+}
+  
   /**
    * Generate Draft CP
    * LOCKED: Hantar cuCode (bukan auto-generate C01, bukan idx)
