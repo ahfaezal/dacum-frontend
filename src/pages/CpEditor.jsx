@@ -10,7 +10,7 @@ function getQueryParam(name) {
   const v1 = s.get(name);
   if (v1) return v1;
 
-  // 2) hash query: #/cp?session=...
+  // 2) hash query: #/cp-editor?session=...&cu=...
   const h = window.location.hash || "";
   const qIndex = h.indexOf("?");
   if (qIndex === -1) return "";
@@ -19,10 +19,18 @@ function getQueryParam(name) {
   return hParams.get(name) || "";
 }
 
+function deepClone(obj) {
+  // structuredClone ada di browser moden, fallback JSON clone
+  try {
+    // eslint-disable-next-line no-undef
+    if (typeof structuredClone === "function") return structuredClone(obj);
+  } catch (_) {}
+  return JSON.parse(JSON.stringify(obj ?? null));
+}
+
 export default function CpEditor() {
-  const params = new URLSearchParams(window.location.search);
-  const sessionId = getQueryParam("session");
-  const cuId = getQueryParam("cu");
+  const sessionId = String(getQueryParam("session") || "").trim();
+  const cuId = String(getQueryParam("cu") || "").trim().toLowerCase(); // 🔒 LOCKED
 
   const [cp, setCp] = useState(null);
   const [err, setErr] = useState("");
@@ -31,20 +39,31 @@ export default function CpEditor() {
   const [locking, setLocking] = useState(false);
 
   async function loadCp() {
+    if (!sessionId || !cuId) {
+      setErr("sessionId atau cu tidak sah.");
+      setCp(null);
+      return;
+    }
+
     setErr("");
     try {
       const r = await fetch(
-        `${API_BASE}/api/cp/${encodeURIComponent(sessionId)}/${encodeURIComponent(cuId)}?version=latest`
+        `${API_BASE}/api/cp/${encodeURIComponent(sessionId)}/${encodeURIComponent(
+          cuId
+        )}?version=latest`
       );
-      const j = await r.json();
-      if (!r.ok) throw new Error(j?.error || "Gagal load CP");
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j?.error || "CP belum wujud. Jana draft dahulu.");
       setCp(j);
     } catch (e) {
-      setErr(String(e));
+      setCp(null);
+      setErr(String(e?.message || e));
     }
   }
 
   async function saveCp() {
+    if (!cp) return;
+
     setSaving(true);
     setErr("");
     try {
@@ -56,51 +75,59 @@ export default function CpEditor() {
           body: JSON.stringify(cp),
         }
       );
-      const j = await r.json();
+      const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j?.error || "Gagal simpan CP");
-      // refresh validation info
-      setCp((prev) => ({ ...prev, validation: j.validation }));
+
+      // refresh validation info jika backend pulangkan
+      if (j?.validation) setCp((prev) => ({ ...(prev || {}), validation: j.validation }));
     } catch (e) {
-      setErr(String(e));
+      setErr(String(e?.message || e));
     } finally {
       setSaving(false);
     }
   }
 
   async function validateNow() {
+    if (!cp) return;
+
     setValidating(true);
     setErr("");
     try {
       const r = await fetch(`${API_BASE}/api/cp/validate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId, cuId, cp }),
+        // ✅ LOCKED: backend dah terima cuCode (fallback cuId)
+        body: JSON.stringify({ sessionId, cuCode: cuId, cuId, cp }),
       });
-      const j = await r.json();
+      const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j?.error || "Gagal validate");
-      setCp((prev) => ({ ...prev, validation: j }));
+      setCp((prev) => ({ ...(prev || {}), validation: j }));
     } catch (e) {
-      setErr(String(e));
+      setErr(String(e?.message || e));
     } finally {
       setValidating(false);
     }
   }
 
   async function lockCp() {
+    if (!cp) return;
+
     setLocking(true);
     setErr("");
     try {
       const r = await fetch(`${API_BASE}/api/cp/lock`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId, cuId, lockedBy: "PANEL" }),
+        // ✅ LOCKED: backend dah terima cuCode (fallback cuId)
+        body: JSON.stringify({ sessionId, cuCode: cuId, cuId, lockedBy: "PANEL" }),
       });
-      const j = await r.json();
+      const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j?.error || "Gagal lock");
+
       await loadCp();
-      alert(`LOCKED ✅  ${j.cpId} (${j.version})`);
+      alert(`LOCKED ✅  ${j.cpId || ""} (${j.version || ""})`);
     } catch (e) {
-      setErr(String(e));
+      setErr(String(e?.message || e));
     } finally {
       setLocking(false);
     }
@@ -108,7 +135,15 @@ export default function CpEditor() {
 
   function updateWs(waIndex, wsIndex, newText) {
     setCp((prev) => {
-      const next = structuredClone(prev);
+      if (!prev) return prev;
+      const next = deepClone(prev);
+
+      next.workActivities = next.workActivities || [];
+      next.workActivities[waIndex] = next.workActivities[waIndex] || {};
+      next.workActivities[waIndex].workSteps = next.workActivities[waIndex].workSteps || [];
+      next.workActivities[waIndex].workSteps[wsIndex] =
+        next.workActivities[waIndex].workSteps[wsIndex] || {};
+
       next.workActivities[waIndex].workSteps[wsIndex].wsText = newText;
       return next;
     });
@@ -116,7 +151,18 @@ export default function CpEditor() {
 
   function updatePcField(waIndex, wsIndex, field, value) {
     setCp((prev) => {
-      const next = structuredClone(prev);
+      if (!prev) return prev;
+      const next = deepClone(prev);
+
+      next.workActivities = next.workActivities || [];
+      next.workActivities[waIndex] = next.workActivities[waIndex] || {};
+      next.workActivities[waIndex].workSteps = next.workActivities[waIndex].workSteps || [];
+      next.workActivities[waIndex].workSteps[wsIndex] =
+        next.workActivities[waIndex].workSteps[wsIndex] || {};
+
+      next.workActivities[waIndex].workSteps[wsIndex].pc =
+        next.workActivities[waIndex].workSteps[wsIndex].pc || {};
+
       next.workActivities[waIndex].workSteps[wsIndex].pc[field] = value;
       return next;
     });
@@ -124,6 +170,7 @@ export default function CpEditor() {
 
   useEffect(() => {
     if (sessionId && cuId) loadCp();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, cuId]);
 
   const issues = cp?.validation?.issues || [];
@@ -134,25 +181,37 @@ export default function CpEditor() {
         <div>
           <h2 style={{ margin: 0 }}>CP Editor</h2>
           <div style={{ marginTop: 6 }}>
-            <b>Session:</b> {sessionId} &nbsp; | &nbsp; <b>CU:</b> {cuId}
+            <b>Session:</b> {sessionId || <i>(tiada)</i>} &nbsp; | &nbsp; <b>CU:</b>{" "}
+            {cuId || <i>(tiada)</i>}
           </div>
         </div>
 
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <button onClick={() => (window.location.href = `/?page=cp&session=${encodeURIComponent(sessionId)}`)}>
+          <button
+            onClick={() => {
+              // konsisten dengan CpDashboard: #/cp?session=...
+              window.location.href = `/#/cp?session=${encodeURIComponent(sessionId)}`;
+            }}
+          >
             Back
           </button>
+
           <button disabled={validating || !cp} onClick={validateNow}>
             {validating ? "Validating..." : "Validate"}
           </button>
+
           <button disabled={saving || !cp} onClick={saveCp}>
             {saving ? "Saving..." : "Save"}
           </button>
+
           <button disabled={locking || !cp} onClick={lockCp}>
             {locking ? "Locking..." : "Lock"}
           </button>
+
           <a
-            href={`${API_BASE}/api/cp/export/${encodeURIComponent(sessionId)}/${encodeURIComponent(cuId)}?format=json`}
+            href={`${API_BASE}/api/cp/export/${encodeURIComponent(sessionId)}/${encodeURIComponent(
+              cuId
+            )}?format=json`}
             target="_blank"
             rel="noreferrer"
           >
@@ -167,10 +226,11 @@ export default function CpEditor() {
       {cp && (
         <div style={{ marginTop: 12 }}>
           <div style={{ padding: 10, border: "1px solid #ddd", borderRadius: 8 }}>
-            <div style={{ fontWeight: "bold" }}>{cp.cu?.cuTitle}</div>
-            <div style={{ fontSize: 13, opacity: 0.85 }}>{cp.cu?.cuCode}</div>
+            <div style={{ fontWeight: "bold" }}>{cp.cu?.cuTitle || "(tiada tajuk CU)"}</div>
+            <div style={{ fontSize: 13, opacity: 0.85 }}>{cp.cu?.cuCode || cuId}</div>
+
             <div style={{ marginTop: 8, fontSize: 13 }}>
-              <b>Status:</b> {cp.status} &nbsp; | &nbsp;{" "}
+              <b>Status:</b> {cp.status || "draft"} &nbsp; | &nbsp;{" "}
               <b>MinRules:</b> {String(cp.validation?.minRulesPassed)} &nbsp; | &nbsp;
               <b>VOC:</b> {String(cp.validation?.vocPassed)} &nbsp; | &nbsp;
               <b>Completeness:</b> {String(cp.validation?.completenessPassed)}
@@ -194,31 +254,53 @@ export default function CpEditor() {
             {(cp.workActivities || []).map((wa, waIdx) => (
               <div
                 key={wa.waId || waIdx}
-                style={{ border: "1px solid #ddd", borderRadius: 8, padding: 12, marginBottom: 12 }}
+                style={{
+                  border: "1px solid #ddd",
+                  borderRadius: 8,
+                  padding: 12,
+                  marginBottom: 12,
+                }}
               >
                 <div style={{ fontWeight: "bold", marginBottom: 8 }}>
-                  {wa.waId}: {wa.waTitle}
+                  {wa.waId || `WA${waIdx + 1}`}: {wa.waTitle || "(tiada tajuk WA)"}
                 </div>
 
                 <div style={{ overflowX: "auto" }}>
                   <table style={{ width: "100%", borderCollapse: "collapse" }}>
                     <thead>
                       <tr>
-                        <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8, width: "18%" }}>
+                        <th
+                          style={{
+                            textAlign: "left",
+                            borderBottom: "1px solid #ccc",
+                            padding: 8,
+                            width: "18%",
+                          }}
+                        >
                           WS No
                         </th>
                         <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>
                           Work Step (WS)
                         </th>
-                        <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8, width: "35%" }}>
+                        <th
+                          style={{
+                            textAlign: "left",
+                            borderBottom: "1px solid #ccc",
+                            padding: 8,
+                            width: "35%",
+                          }}
+                        >
                           Performance Criteria (VOC)
                         </th>
                       </tr>
                     </thead>
+
                     <tbody>
                       {(wa.workSteps || []).map((ws, wsIdx) => (
                         <tr key={ws.wsId || wsIdx}>
-                          <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{ws.wsNo}</td>
+                          <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>
+                            {ws.wsNo || `${waIdx + 1}.${wsIdx + 1}`}
+                          </td>
 
                           <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>
                             <textarea
@@ -255,11 +337,25 @@ export default function CpEditor() {
                           </td>
                         </tr>
                       ))}
+
+                      {!wa.workSteps?.length && (
+                        <tr>
+                          <td colSpan={3} style={{ padding: 10, opacity: 0.75 }}>
+                            (Tiada Work Steps untuk WA ini.)
+                          </td>
+                        </tr>
+                      )}
                     </tbody>
                   </table>
                 </div>
               </div>
             ))}
+
+            {!cp.workActivities?.length && (
+              <div style={{ marginTop: 10, opacity: 0.75 }}>
+                (Tiada Work Activities dalam CP ini.)
+              </div>
+            )}
           </div>
         </div>
       )}
