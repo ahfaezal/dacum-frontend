@@ -20,7 +20,6 @@ function getQueryParam(name) {
 }
 
 function deepClone(obj) {
-  // structuredClone ada di browser moden, fallback JSON clone
   try {
     // eslint-disable-next-line no-undef
     if (typeof structuredClone === "function") return structuredClone(obj);
@@ -31,12 +30,71 @@ function deepClone(obj) {
 export default function CpEditor() {
   const sessionId = String(getQueryParam("session") || "").trim();
   const cuId = String(getQueryParam("cu") || "").trim().toLowerCase(); // 🔒 LOCKED
+  const fromDraft = String(getQueryParam("fromDraft") || "") === "1";
 
   const [cp, setCp] = useState(null);
   const [err, setErr] = useState("");
   const [saving, setSaving] = useState(false);
   const [validating, setValidating] = useState(false);
   const [locking, setLocking] = useState(false);
+
+  function buildCpFromDraft(draft) {
+    const cuTitle =
+      String(draft?.cuTitle || draft?.cu?.cuTitle || "").trim() || "(tiada tajuk CU)";
+
+    // draft mungkin simpan waList sebagai array string, atau workActivities penuh
+    const waList = Array.isArray(draft?.waList) ? draft.waList : [];
+    const workActivities =
+      Array.isArray(draft?.workActivities) && draft.workActivities.length
+        ? draft.workActivities
+        : waList.map((title, idx) => ({
+            // waId boleh kosong (UI anda dah ada fallback waIdx)
+            waId: "",
+            waTitle: String(title || "").trim() || `(WA#${idx + 1})`,
+            workSteps: [],
+          }));
+
+    return {
+      // asas
+      sessionId,
+      status: draft?.status || "draft",
+      cu: {
+        cuCode: cuId,
+        cuTitle,
+      },
+      workActivities,
+      // validation optional
+      validation: draft?.validation || null,
+      // simpan apa-apa data lain kalau ada
+      ...draft,
+    };
+  }
+
+  function tryLoadDraftFromSessionStorage() {
+    if (!sessionId || !cuId) return false;
+
+    const key = `cpDraft:${sessionId}:${cuId}`;
+    const raw = sessionStorage.getItem(key);
+    if (!raw) return false;
+
+    try {
+      const draft = JSON.parse(raw);
+
+      // jika draft ini memang untuk session/cu yang betul
+      const dSession = String(draft?.sessionId || "").trim();
+      const dCu = String(draft?.cuCode || draft?.cuId || draft?.cu?.cuCode || "").trim().toLowerCase();
+
+      if (dSession && dSession !== sessionId) return false;
+      if (dCu && dCu !== cuId) return false;
+
+      setErr("");
+      setCp(buildCpFromDraft(draft));
+      return true;
+    } catch (e) {
+      console.error("Gagal parse draft dari sessionStorage:", e);
+      return false;
+    }
+  }
 
   async function loadCp() {
     if (!sessionId || !cuId) {
@@ -78,7 +136,6 @@ export default function CpEditor() {
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j?.error || "Gagal simpan CP");
 
-      // refresh validation info jika backend pulangkan
       if (j?.validation) setCp((prev) => ({ ...(prev || {}), validation: j.validation }));
     } catch (e) {
       setErr(String(e?.message || e));
@@ -96,7 +153,6 @@ export default function CpEditor() {
       const r = await fetch(`${API_BASE}/api/cp/validate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        // ✅ LOCKED: backend dah terima cuCode (fallback cuId)
         body: JSON.stringify({ sessionId, cuCode: cuId, cuId, cp }),
       });
       const j = await r.json().catch(() => ({}));
@@ -118,7 +174,6 @@ export default function CpEditor() {
       const r = await fetch(`${API_BASE}/api/cp/lock`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        // ✅ LOCKED: backend dah terima cuCode (fallback cuId)
         body: JSON.stringify({ sessionId, cuCode: cuId, cuId, lockedBy: "PANEL" }),
       });
       const j = await r.json().catch(() => ({}));
@@ -169,9 +224,18 @@ export default function CpEditor() {
   }
 
   useEffect(() => {
-    if (sessionId && cuId) loadCp();
+    if (!sessionId || !cuId) return;
+
+    // ✅ PRIORITY: jika datang dari Generate Draft, load dari sessionStorage dulu
+    if (fromDraft) {
+      const ok = tryLoadDraftFromSessionStorage();
+      if (ok) return; // stop, tak perlu fetch API
+      // kalau draft tak jumpa, baru fallback ke API
+    }
+
+    loadCp();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, cuId]);
+  }, [sessionId, cuId, fromDraft]);
 
   const issues = cp?.validation?.issues || [];
 
@@ -189,7 +253,6 @@ export default function CpEditor() {
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <button
             onClick={() => {
-              // konsisten dengan CpDashboard: #/cp?session=...
               window.location.href = `/#/cp?session=${encodeURIComponent(sessionId)}`;
             }}
           >
