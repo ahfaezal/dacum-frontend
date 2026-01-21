@@ -25,18 +25,15 @@ function getQueryParam(name) {
 }
 
 /**
- * Extractor kalis peluru untuk CU list daripada CPC JSON.
- * (Sebab struktur CPC boleh berbeza ikut versi backend / data source)
+ * Extractor CU list dari CPC JSON (kalis peluru, tetapi kita tetap LOCK ID ikut CPC).
  */
 function extractCuList(cpc) {
   if (!cpc) return [];
 
-  // bentuk biasa
   if (Array.isArray(cpc.cus)) return cpc.cus;
   if (Array.isArray(cpc.units)) return cpc.units;
   if (Array.isArray(cpc.competencyUnits)) return cpc.competencyUnits;
 
-  // kadang data dibungkus
   if (cpc.data) {
     if (Array.isArray(cpc.data.cus)) return cpc.data.cus;
     if (Array.isArray(cpc.data.units)) return cpc.data.units;
@@ -53,25 +50,63 @@ function extractCuList(cpc) {
   return out;
 }
 
-function getCuId(cu, idx) {
-  return cu?.cuId || cu?.id || cu?.code || `C${String(idx + 1).padStart(2, "0")}`;
+/**
+ * LOCKED: CU ID MESTI ikut CPC
+ * Utama: cuCode (seperti sample anda: "c01")
+ * Fallback (legacy): cuId/id/code (jika backend lama)
+ * TIADA auto-generate "C01" lagi.
+ */
+function getCuIdCanonical(cu) {
+  return String(
+    cu?.cuCode || cu?.cuId || cu?.id || cu?.code || ""
+  ).trim();
 }
 
+/**
+ * Tajuk CU (ikut CPC)
+ */
 function getCuTitle(cu) {
-  return cu?.cuTitle || cu?.title || cu?.name || cu?.cuName || "";
+  return String(
+    cu?.cuTitle || cu?.title || cu?.name || cu?.cuName || ""
+  ).trim();
 }
 
 function extractWaListFromCu(cu) {
-  // WA biasanya disimpan sebagai "activities" dalam CPC (C01-W01..)
-  return cu?.activities || cu?.waList || cu?.workActivities || cu?.was || cu?.wa || [];
+  // Dalam CPC anda: wa: [{ waCode, waTitle }]
+  return (
+    cu?.wa ||
+    cu?.waList ||
+    cu?.workActivities ||
+    cu?.activities ||
+    cu?.was ||
+    []
+  );
+}
+
+/**
+ * LOCKED: WA ID MESTI ikut CPC
+ * Utama: waCode (seperti sample anda: "w01")
+ * Fallback (legacy): waId/id/code
+ * TIADA auto-generate "W01" lagi.
+ */
+function getWaIdCanonical(wa) {
+  return String(
+    wa?.waCode || wa?.waId || wa?.id || wa?.code || ""
+  ).trim();
 }
 
 function getWaTitle(wa) {
-  return wa?.waTitle || wa?.title || wa?.name || wa?.text || "";
+  return String(
+    wa?.waTitle || wa?.title || wa?.name || wa?.text || ""
+  ).trim();
 }
 
-function getWaId(wa, idx) {
-  return wa?.waId || wa?.id || wa?.code || `W${String(idx + 1).padStart(2, "0")}`;
+/**
+ * Untuk paparan sahaja (cantik): "c01" -> "C01"
+ * Jangan guna untuk hantar ke backend.
+ */
+function displayCode(code) {
+  return String(code || "").trim().toUpperCase();
 }
 
 export default function CpDashboard() {
@@ -80,8 +115,11 @@ export default function CpDashboard() {
   const [cpc, setCpc] = useState(null);
   const [err, setErr] = useState("");
   const [busyCu, setBusyCu] = useState("");
+  const [loading, setLoading] = useState(false);
 
   async function loadCpc() {
+    if (!sessionId) return;
+    setLoading(true);
     setErr("");
     try {
       const r = await fetch(`${API_BASE}/api/cpc/${encodeURIComponent(sessionId)}`);
@@ -89,19 +127,27 @@ export default function CpDashboard() {
       if (!r.ok) throw new Error(j?.error || "Gagal load CPC");
       setCpc(j);
     } catch (e) {
-      setErr(String(e));
+      setErr(String(e?.message || e));
+      setCpc(null);
+    } finally {
+      setLoading(false);
     }
   }
 
   async function generateDraft(cuId) {
-    if (!sessionId || !cuId) return;
-    setBusyCu(cuId);
+    const cuIdCanon = String(cuId || "").trim();
+    if (!sessionId || !cuIdCanon) {
+      setErr("CU ID tidak sah (tiada cuCode/cuId dalam CPC).");
+      return;
+    }
+
+    setBusyCu(cuIdCanon);
     setErr("");
     try {
       const r = await fetch(`${API_BASE}/api/cp/draft`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId, cuId }),
+        body: JSON.stringify({ sessionId, cuId: cuIdCanon }), // HANTAR CANONICAL
       });
       const j = await r.json();
       if (!r.ok) throw new Error(j?.error || "Gagal jana draft CP");
@@ -109,20 +155,23 @@ export default function CpDashboard() {
       // Pergi ke editor (HASH routing)
       window.location.href = `/#/cp-editor?session=${encodeURIComponent(
         sessionId
-      )}&cu=${encodeURIComponent(cuId)}`;
+      )}&cu=${encodeURIComponent(cuIdCanon)}`;
     } catch (e) {
-      setErr(String(e));
+      setErr(String(e?.message || e));
     } finally {
       setBusyCu("");
     }
   }
 
   function goEdit(cuId) {
-    if (!sessionId || !cuId) return;
-    // HASH routing (bukan ?page=...)
+    const cuIdCanon = String(cuId || "").trim();
+    if (!sessionId || !cuIdCanon) {
+      setErr("CU ID tidak sah (tiada cuCode/cuId dalam CPC).");
+      return;
+    }
     window.location.href = `/#/cp-editor?session=${encodeURIComponent(
       sessionId
-    )}&cu=${encodeURIComponent(cuId)}`;
+    )}&cu=${encodeURIComponent(cuIdCanon)}`;
   }
 
   useEffect(() => {
@@ -131,9 +180,32 @@ export default function CpDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
 
-  const language = cpc?.language || cpc?.bahasa || cpc?.lang || cpc?.data?.language || "auto";
+  const language =
+    cpc?.lang ||
+    cpc?.language ||
+    cpc?.bahasa ||
+    cpc?.data?.lang ||
+    cpc?.data?.language ||
+    "auto";
 
-  const cuList = useMemo(() => extractCuList(cpc), [cpc]);
+  const cuListRaw = useMemo(() => extractCuList(cpc), [cpc]);
+
+  // Normalise CU list: pastikan setiap CU ada cuIdCanonical (jika tiada, kita tanda invalid)
+  const cuList = useMemo(() => {
+    return (cuListRaw || []).map((cu) => {
+      const cuIdCanon = getCuIdCanonical(cu);
+      const cuTitle = getCuTitle(cu);
+      const waList = extractWaListFromCu(cu) || [];
+      return {
+        _raw: cu,
+        cuIdCanon,
+        cuTitle,
+        waList,
+      };
+    });
+  }, [cuListRaw]);
+
+  const hasInvalidCu = cuList.some((x) => !x.cuIdCanon);
 
   return (
     <div style={{ padding: 16, fontFamily: "Arial, sans-serif" }}>
@@ -158,29 +230,54 @@ export default function CpDashboard() {
 
       {err && <div style={{ color: "crimson", marginTop: 10 }}>{err}</div>}
 
-      {sessionId && !cpc && <div style={{ marginTop: 12 }}>Loading CPC...</div>}
+      {sessionId && (loading || (!cpc && !err)) && (
+        <div style={{ marginTop: 12 }}>Loading CPC...</div>
+      )}
 
-      {cpc && !cuList.length && (
+      {cpc && !cuListRaw?.length && (
         <div style={{ marginTop: 12, color: "crimson" }}>
           CPC berjaya dimuat (200 OK) tetapi senarai CU tidak ditemui dalam struktur data.
           <div style={{ fontSize: 13, opacity: 0.85, marginTop: 6 }}>
-            Petunjuk: semak Response `/api/cpc/{sessionId}` untuk lihat di mana array CU disimpan.
+            Semak response <code>/api/cpc/{`{sessionId}`}</code> — pastikan CU berada dalam{" "}
+            <code>units</code> atau <code>cus</code>.
           </div>
         </div>
       )}
 
-      {!!cuList.length && (
+      {cpc && !!cuListRaw?.length && (
         <div style={{ marginTop: 12 }}>
           <h3 style={{ margin: "12px 0" }}>Senarai CU (diambil terus dari CPC)</h3>
 
-          {cuList.map((cu, idx) => {
-            const cuId = getCuId(cu, idx);
-            const cuTitle = getCuTitle(cu);
-            const waList = extractWaListFromCu(cu);
+          {hasInvalidCu && (
+            <div
+              style={{
+                border: "1px solid #f5c2c7",
+                background: "#f8d7da",
+                color: "#842029",
+                padding: 10,
+                borderRadius: 10,
+                maxWidth: 860,
+                marginBottom: 12,
+                fontSize: 13,
+              }}
+            >
+              Ada CU yang <b>tiada</b> <code>cuCode</code>/<code>cuId</code> dalam CPC.{" "}
+              Sistem <b>tidak</b> akan auto-generate ID kerana kita lock “ikut CPC”.
+            </div>
+          )}
+
+          {cuList.map((item, idx) => {
+            const cuIdCanon = item.cuIdCanon; // contoh: "c01"
+            const cuTitle = item.cuTitle;
+            const waList = item.waList || [];
+            const isInvalid = !cuIdCanon;
+
+            // untuk paparan cantik sahaja
+            const cuDisplay = displayCode(cuIdCanon) || `(CU#${idx + 1} tiada ID)`;
 
             return (
               <div
-                key={cuId}
+                key={cuIdCanon || `cu-${idx}`}
                 style={{
                   border: "1px solid #ddd",
                   borderRadius: 10,
@@ -188,42 +285,78 @@ export default function CpDashboard() {
                   marginBottom: 12,
                   maxWidth: 860,
                   background: "#fff",
+                  opacity: isInvalid ? 0.85 : 1,
                 }}
               >
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
                   <div style={{ flex: 1 }}>
                     <div style={{ fontWeight: "bold", fontSize: 15 }}>
-                      {cuId}: {cuTitle}
+                      {cuDisplay}: {cuTitle || <span style={{ opacity: 0.7 }}>(tiada tajuk)</span>}
                     </div>
-                    <div style={{ fontSize: 13, opacity: 0.8, marginTop: 2 }}>
-                      WA dalam CPC: {waList?.length || 0}
+
+                    {/* show canonical id (debug) */}
+                    <div style={{ fontSize: 12, opacity: 0.75, marginTop: 4 }}>
+                      <b>ID (CPC):</b>{" "}
+                      {cuIdCanon ? (
+                        <code>{cuIdCanon}</code>
+                      ) : (
+                        <span style={{ color: "crimson" }}>tiada (wajib ada cuCode/cuId)</span>
+                      )}
+                    </div>
+
+                    <div style={{ fontSize: 13, opacity: 0.8, marginTop: 4 }}>
+                      WA dalam CPC: {waList.length}
                     </div>
                   </div>
 
                   <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                    <button disabled={busyCu === cuId} onClick={() => goEdit(cuId)}>
+                    <button
+                      disabled={isInvalid || busyCu === cuIdCanon}
+                      onClick={() => goEdit(cuIdCanon)}
+                      title={isInvalid ? "CU tiada cuCode/cuId dalam CPC" : ""}
+                    >
                       Edit CP
                     </button>
 
-                    <button disabled={busyCu === cuId} onClick={() => generateDraft(cuId)}>
-                      {busyCu === cuId ? "Generating..." : "Generate Draft"}
+                    <button
+                      disabled={isInvalid || busyCu === cuIdCanon}
+                      onClick={() => generateDraft(cuIdCanon)}
+                      title={isInvalid ? "CU tiada cuCode/cuId dalam CPC" : ""}
+                    >
+                      {busyCu === cuIdCanon ? "Generating..." : "Generate Draft"}
                     </button>
                   </div>
                 </div>
 
-                {/* Papar WA list (nama WA wajib ikut CPC) */}
-                {waList?.length ? (
+                {/* Papar WA list (ikut CPC) */}
+                {waList.length ? (
                   <div style={{ marginTop: 10 }}>
                     <div style={{ fontSize: 13, fontWeight: "bold", marginBottom: 6 }}>
                       Work Activities (WA) — ikut CPC
                     </div>
                     <ul style={{ margin: 0, paddingLeft: 18 }}>
                       {waList.map((wa, wIdx) => {
-                        const waId = getWaId(wa, wIdx);
+                        const waIdCanon = getWaIdCanonical(wa); // contoh: "w01"
                         const waTitle = getWaTitle(wa);
+                        const waDisplay = displayCode(waIdCanon) || `(WA#${wIdx + 1} tiada ID)`;
+                        const waInvalid = !waIdCanon;
+
                         return (
-                          <li key={`${cuId}-${waId}-${wIdx}`} style={{ marginBottom: 4 }}>
-                            <b>{waId}</b> — {waTitle}
+                          <li
+                            key={`${cuIdCanon || idx}-${waIdCanon || `wa-${wIdx}`}`}
+                            style={{ marginBottom: 4 }}
+                          >
+                            <b>{waDisplay}</b> — {waTitle || <span style={{ opacity: 0.7 }}>(tiada tajuk)</span>}
+                            {waInvalid && (
+                              <span style={{ marginLeft: 8, color: "crimson", fontSize: 12 }}>
+                                (tiada waCode/waId dalam CPC)
+                              </span>
+                            )}
+                            {!waInvalid && (
+                              <span style={{ marginLeft: 8, opacity: 0.7, fontSize: 12 }}>
+                                <code>{waIdCanon}</code>
+                              </span>
+                            )}
                           </li>
                         );
                       })}
