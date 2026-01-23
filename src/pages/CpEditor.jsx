@@ -126,7 +126,10 @@ async function aiSeedWs() {
   setSeeding(true);
   setErr("");
   try {
-    const waList = (cp.workActivities || []).map((x) => String(x.waTitle || "").trim()).filter(Boolean);
+    const waList = (cp.workActivities || [])
+      .map((x) => String(x.waTitle || x.title || x.name || "").trim())
+      .filter(Boolean);
+
     const cuTitle = String(cp.cu?.cuTitle || "").trim();
 
     const r = await fetch(`${API_BASE}/api/cp/ai/seed-ws`, {
@@ -137,14 +140,13 @@ async function aiSeedWs() {
         cuCode: cuId,
         cuTitle,
         waList,
-        wsPerWa: 5, // boleh ubah 3–7
+        wsPerWa: 5,
       }),
     });
 
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j?.error || "Gagal AI seed WS");
 
-    // merge workActivities hasil AI ke CP
     setCp((prev) => ({
       ...(prev || {}),
       workActivities: j.workActivities || prev?.workActivities || [],
