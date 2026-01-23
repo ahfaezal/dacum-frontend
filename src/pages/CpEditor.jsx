@@ -37,6 +37,7 @@ export default function CpEditor() {
   const [saving, setSaving] = useState(false);
   const [validating, setValidating] = useState(false);
   const [locking, setLocking] = useState(false);
+  const [seeding, setSeeding] = useState(false);
 
   function buildCpFromDraft(draft) {
     const cuTitle =
@@ -119,6 +120,42 @@ export default function CpEditor() {
     }
   }
 
+async function aiSeedWs() {
+  if (!cp) return;
+
+  setSeeding(true);
+  setErr("");
+  try {
+    const waList = (cp.workActivities || []).map((x) => String(x.waTitle || "").trim()).filter(Boolean);
+    const cuTitle = String(cp.cu?.cuTitle || "").trim();
+
+    const r = await fetch(`${API_BASE}/api/cp/ai/seed-ws`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sessionId,
+        cuCode: cuId,
+        cuTitle,
+        waList,
+        wsPerWa: 5, // boleh ubah 3–7
+      }),
+    });
+
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j?.error || "Gagal AI seed WS");
+
+    // merge workActivities hasil AI ke CP
+    setCp((prev) => ({
+      ...(prev || {}),
+      workActivities: j.workActivities || prev?.workActivities || [],
+    }));
+  } catch (e) {
+    setErr(String(e?.message || e));
+  } finally {
+    setSeeding(false);
+  }
+}
+  
   async function saveCp() {
     if (!cp) return;
 
