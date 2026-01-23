@@ -278,8 +278,11 @@ async function aiSeedWs() {
 
   const issues = cp?.validation?.issues || [];
 
-  return (
-    <div style={{ padding: 16, fontFamily: "Arial, sans-serif" }}>
+    return (
+      <div
+        key={`${sessionId}-${cuId}-${fromDraft ? "draft" : "normal"}`}
+        style={{ padding: 16, fontFamily: "Arial, sans-serif" }}
+      >
       <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
         <div>
           <h2 style={{ margin: 0 }}>CP Editor</h2>
