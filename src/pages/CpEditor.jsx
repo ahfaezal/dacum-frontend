@@ -1,9 +1,14 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 
 const API_BASE =
   (import.meta?.env?.VITE_API_BASE && String(import.meta.env.VITE_API_BASE)) ||
   "https://dacum-backend.onrender.com";
 
+/**
+ * Ambil query param daripada:
+ * 1) window.location.search  -> ?session=...
+ * 2) hash query              -> #/cp-editor?session=...&cu=...
+ */
 function getQueryParam(name) {
   // 1) normal query: ?session=...
   const s = new URLSearchParams(window.location.search);
@@ -39,35 +44,42 @@ export default function CpEditor() {
   const [locking, setLocking] = useState(false);
   const [seeding, setSeeding] = useState(false);
 
+  // elak auto-seed berulang (terutama bila setCp berlaku beberapa kali)
+  const seededOnceRef = useRef(false);
+
+  // reset flag bila tukar CU/session
+  useEffect(() => {
+    seededOnceRef.current = false;
+  }, [sessionId, cuId]);
+
   function buildCpFromDraft(draft) {
     const cuTitle =
       String(draft?.cuTitle || draft?.cu?.cuTitle || "").trim() || "(tiada tajuk CU)";
 
     // draft mungkin simpan waList sebagai array string, atau workActivities penuh
     const waList = Array.isArray(draft?.waList) ? draft.waList : [];
+
     const workActivities =
       Array.isArray(draft?.workActivities) && draft.workActivities.length
         ? draft.workActivities
         : waList.map((title, idx) => ({
-            // waId boleh kosong (UI anda dah ada fallback waIdx)
             waId: "",
             waTitle: String(title || "").trim() || `(WA#${idx + 1})`,
             workSteps: [],
           }));
 
+    // IMPORTANT: spread draft di awal (supaya kita boleh override field LOCKED)
     return {
-      // asas
+      ...(draft || {}),
       sessionId,
       status: draft?.status || "draft",
       cu: {
+        ...(draft?.cu || {}),
         cuCode: cuId,
         cuTitle,
       },
       workActivities,
-      // validation optional
-      validation: draft?.validation || null,
-      // simpan apa-apa data lain kalau ada
-      ...draft,
+      validation: draft?.validation || draft?.cu?.validation || null,
     };
   }
 
@@ -81,7 +93,7 @@ export default function CpEditor() {
     try {
       const draft = JSON.parse(raw);
 
-      // jika draft ini memang untuk session/cu yang betul
+      // semak session/cu match (kalau ada dalam draft)
       const dSession = String(draft?.sessionId || "").trim();
       const dCu = String(draft?.cuCode || draft?.cuId || draft?.cu?.cuCode || "").trim().toLowerCase();
 
@@ -92,6 +104,7 @@ export default function CpEditor() {
       setCp(buildCpFromDraft(draft));
       return true;
     } catch (e) {
+      // eslint-disable-next-line no-console
       console.error("Gagal parse draft dari sessionStorage:", e);
       return false;
     }
@@ -107,9 +120,7 @@ export default function CpEditor() {
     setErr("");
     try {
       const r = await fetch(
-        `${API_BASE}/api/cp/${encodeURIComponent(sessionId)}/${encodeURIComponent(
-          cuId
-        )}?version=latest`
+        `${API_BASE}/api/cp/${encodeURIComponent(sessionId)}/${encodeURIComponent(cuId)}?version=latest`
       );
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j?.error || "CP belum wujud. Jana draft dahulu.");
@@ -120,44 +131,58 @@ export default function CpEditor() {
     }
   }
 
-async function aiSeedWs() {
-  if (!cp) return;
+  async function aiSeedWs() {
+    if (!cp) return;
 
-  setSeeding(true);
-  setErr("");
-  try {
-    const waList = (cp.workActivities || [])
-      .map((x) => String(x.waTitle || x.title || x.name || "").trim())
-      .filter(Boolean);
+    setSeeding(true);
+    setErr("");
+    try {
+      const waList = (cp.workActivities || [])
+        .map((x) => String(x.waTitle || x.title || x.name || "").trim())
+        .filter(Boolean);
 
-    const cuTitle = String(cp.cu?.cuTitle || "").trim();
+      const cuTitle = String(cp.cu?.cuTitle || "").trim();
 
-    const r = await fetch(`${API_BASE}/api/cp/ai/seed-ws`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        sessionId,
-        cuCode: cuId,
-        cuTitle,
-        waList,
-        wsPerWa: 5,
-      }),
-    });
+      const r = await fetch(`${API_BASE}/api/cp/ai/seed-ws`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId,
+          cuCode: cuId, // 🔒 LOCKED
+          cuTitle,
+          waList,
+          wsPerWa: 5, // boleh ubah 3–7
+        }),
+      });
 
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(j?.error || "Gagal AI seed WS");
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j?.error || "Gagal AI seed WS");
 
-    setCp((prev) => ({
-      ...(prev || {}),
-      workActivities: j.workActivities || prev?.workActivities || [],
-    }));
-  } catch (e) {
-    setErr(String(e?.message || e));
-  } finally {
-    setSeeding(false);
+      setCp((prev) => ({
+        ...(prev || {}),
+        workActivities: j.workActivities || prev?.workActivities || [],
+      }));
+    } catch (e) {
+      setErr(String(e?.message || e));
+    } finally {
+      setSeeding(false);
+    }
   }
-}
-  
+
+  // =======================================
+  // AUTO AI SEED WS (RUN SEKALI SAHAJA)
+  // Hanya bila fromDraft=1 dan CP sudah wujud
+  // =======================================
+  useEffect(() => {
+    if (!fromDraft) return;
+    if (!cp) return;
+    if (seededOnceRef.current) return;
+
+    seededOnceRef.current = true;
+    aiSeedWs();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fromDraft, cp]);
+
   async function saveCp() {
     if (!cp) return;
 
@@ -265,11 +290,11 @@ async function aiSeedWs() {
   useEffect(() => {
     if (!sessionId || !cuId) return;
 
-    // ✅ PRIORITY: jika datang dari Generate Draft, load dari sessionStorage dulu
+    // ✅ PRIORITY: kalau datang dari Generate Draft, cuba load draft dulu
     if (fromDraft) {
       const ok = tryLoadDraftFromSessionStorage();
-      if (ok) return; // stop, tak perlu fetch API
-      // kalau draft tak jumpa, baru fallback ke API
+      if (ok) return; // stop: tak perlu fetch API
+      // kalau draft tak ada, fallback API
     }
 
     loadCp();
@@ -278,17 +303,22 @@ async function aiSeedWs() {
 
   const issues = cp?.validation?.issues || [];
 
-    return (
-      <div
-        key={`${sessionId}-${cuId}-${fromDraft ? "draft" : "normal"}`}
-        style={{ padding: 16, fontFamily: "Arial, sans-serif" }}
-      >
+  return (
+    <div
+      key={`${sessionId}-${cuId}-${fromDraft ? "draft" : "normal"}`}
+      style={{ padding: 16, fontFamily: "Arial, sans-serif" }}
+    >
       <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
         <div>
           <h2 style={{ margin: 0 }}>CP Editor</h2>
           <div style={{ marginTop: 6 }}>
             <b>Session:</b> {sessionId || <i>(tiada)</i>} &nbsp; | &nbsp; <b>CU:</b>{" "}
             {cuId || <i>(tiada)</i>}
+            {fromDraft && (
+              <span style={{ marginLeft: 10, fontSize: 12, opacity: 0.75 }}>
+                (fromDraft=1)
+              </span>
+            )}
           </div>
         </div>
 
@@ -299,6 +329,10 @@ async function aiSeedWs() {
             }}
           >
             Back
+          </button>
+
+          <button disabled={seeding || !cp} onClick={aiSeedWs} title="Jana Work Steps (WS) dengan AI">
+            {seeding ? "Seeding..." : "AI Seed WS"}
           </button>
 
           <button disabled={validating || !cp} onClick={validateNow}>
