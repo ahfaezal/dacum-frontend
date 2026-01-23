@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import ReactDOM from "react-dom/client";
 
 import App from "./App.jsx";
@@ -15,18 +15,23 @@ import CpEditor from "./pages/CpEditor.jsx";
  * Router ringkas guna hash (#)
  * Elak react-router untuk deploy Vercel yang laju & stabil
  *
- * Routing asal:
- *  - #/board   -> LiveBoard
- *  - #/panel   -> PanelPage
- *  - #/cluster -> ClusterPage
- *  - #/cpc     -> CpcPage
- *
- * Tambahan Fasa 3:
+ * Routing:
+ *  - #/board      -> LiveBoard
+ *  - #/panel      -> PanelPage
+ *  - #/cluster    -> ClusterPage
+ *  - #/cpc        -> CpcPage
  *  - #/cp         -> CpDashboard
  *  - #/cp-editor  -> CpEditor
  */
 function Router() {
-  const hash = window.location.hash || "";
+  // ✅ Jadikan hash reactive (tanpa ini, URL berubah tapi page tak bertukar)
+  const [hash, setHash] = useState(window.location.hash || "");
+
+  useEffect(() => {
+    const onHashChange = () => setHash(window.location.hash || "");
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, []);
 
   // ===== ROUTES (HASH) =====
   if (hash.startsWith("#/board")) return <LiveBoard />;
@@ -35,6 +40,7 @@ function Router() {
   if (hash.startsWith("#/cpc")) return <CpcPage />;
 
   // FASA 3: CP
+  // ⚠️ Susunan ini betul: cp-editor mesti di atas cp (supaya tak kena match "#/cp")
   if (hash.startsWith("#/cp-editor")) return <CpEditor />;
   if (hash.startsWith("#/cp")) return <CpDashboard />;
 
@@ -44,9 +50,8 @@ function Router() {
    * Jika tiada → App (landing / menu)
    */
   const params = new URLSearchParams(window.location.search);
-  if (params.get("session")) {
-    return <CpcPage />;
-  }
+  if (params.get("session")) return <CpcPage />;
+
   return <App />;
 }
 
