@@ -247,31 +247,69 @@ export default function ClusterPage({ initialSessionId = "Masjid", onBack }) {
     }
   }
 
-  async function applyMerge() {
-    const sid = String(sessionId || "").trim();
-    if (!sid) return alert("Sila isi Session dulu.");
+async function applyMerge() {
+  const sid = String(sessionId || "").trim();
+  if (!sid) return alert("Sila isi Session dulu.");
 
-    if (!agreed) {
-      return alert("Sila tekan 'Agreed' dahulu selepas anda selesai edit clustering.");
-    }
-
-    setBusy(true);
-    setErr("");
-    try {
-      // NOTE: endpoint apply mesti wujud di backend
-      await apiPost(`/api/cluster/apply/${encodeURIComponent(sid)}`, {
-        clusters,
-        source: "manual_edit_before_merge",
-      });
-
-      alert("Apply AI (Merge) berjaya. Sila semak output seterusnya.");
-    } catch (e) {
-      setErr(String(e?.message || e));
-      alert(String(e?.message || e));
-    } finally {
-      setBusy(false);
-    }
+  if (!agreed) {
+    return alert("Sila tekan 'Agreed' dahulu selepas anda selesai edit clustering.");
   }
+
+  setBusy(true);
+  setErr("");
+
+  const payload = {
+    sessionId: sid,
+    sid,
+    clusters,
+    source: "manual_edit_before_merge",
+  };
+
+  // Cuba beberapa endpoint yang biasa wujud (ikut pattern run/result)
+  const tries = [
+    // A) route yang anda cuba sekarang (tapi 404)
+    { path: `/api/cluster/apply/${encodeURIComponent(sid)}`, body: payload },
+
+    // B) route tanpa :sid (guna body)
+    { path: `/api/cluster/apply`, body: payload },
+
+    // C) nama endpoint yang lazim digunakan untuk merge
+    { path: `/api/cluster/merge/${encodeURIComponent(sid)}`, body: payload },
+    { path: `/api/cluster/merge`, body: payload },
+
+    // D) ada backend guna "commit/finalize/confirm"
+    { path: `/api/cluster/commit/${encodeURIComponent(sid)}`, body: payload },
+    { path: `/api/cluster/finalize/${encodeURIComponent(sid)}`, body: payload },
+  ];
+
+  let lastErr = "";
+
+  try {
+    for (const t of tries) {
+      try {
+        console.log("APPLY/MERGE TRY:", t.path);
+        const out = await apiPost(t.path, t.body);
+        console.log("APPLY/MERGE OK:", t.path, out);
+
+        alert("Apply AI (Merge) berjaya. Sila semak output seterusnya.");
+        return;
+      } catch (e) {
+        lastErr = String(e?.message || e);
+        console.warn("APPLY/MERGE FAIL:", t.path, lastErr);
+      }
+    }
+
+    throw new Error(
+      lastErr ||
+        "Apply AI (Merge) gagal: semua endpoint tidak serasi. Backend tiada route apply/merge."
+    );
+  } catch (e) {
+    setErr(String(e?.message || e));
+    alert(String(e?.message || e));
+  } finally {
+    setBusy(false);
+  }
+}
 
   // ====== EDIT ACTIONS ======
   function renameCluster(clusterId, newTitle) {
