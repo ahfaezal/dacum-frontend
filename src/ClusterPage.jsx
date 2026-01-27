@@ -148,22 +148,54 @@ export default function ClusterPage({ initialSessionId = "Masjid", onBack }) {
     return json;
   }
 
-  async function loadResult() {
-    const sid = String(sessionId || "").trim();
-    if (!sid) return;
+async function loadResult() {
+  const sid = String(sessionId || "").trim();
+  if (!sid) return;
 
-    setErr("");
-    try {
-      // ✅ Endpoint biasa kita guna: /api/cluster/result/:sessionId
-      const out = await apiGet(`/api/cluster/result/${encodeURIComponent(sid)}`);
-      setRawResult(out);
-      const normalized = normalizeClusterResult(out);
-      setClusters(normalized);
-      setAgreed(false); // bila load result baru, perlu agreed semula
-    } catch (e) {
-      setErr(String(e?.message || e));
+  setErr("");
+
+  const tries = [
+    // A) lama: /api/cluster/result/:sid
+    `/api/cluster/result/${encodeURIComponent(sid)}`,
+
+    // B) query: /api/cluster/result?session=sid
+    `/api/cluster/result?session=${encodeURIComponent(sid)}`,
+
+    // C) query alt: /api/cluster/result?sessionId=sid
+    `/api/cluster/result?sessionId=${encodeURIComponent(sid)}`,
+
+    // D) query alt: /api/cluster/result?sid=sid
+    `/api/cluster/result?sid=${encodeURIComponent(sid)}`,
+  ];
+
+  try {
+    let out = null;
+    let last = "";
+
+    for (const path of tries) {
+      try {
+        console.log("LOAD RESULT TRY:", path);
+        out = await apiGet(path);
+        console.log("LOAD RESULT OK:", path, out);
+        break;
+      } catch (e) {
+        last = String(e?.message || e);
+        console.warn("LOAD RESULT FAIL:", path, last);
+      }
     }
+
+    if (!out) throw new Error(last || "Gagal load cluster result (tiada endpoint yang serasi).");
+
+    setRawResult(out);
+
+    // jika backend pulangkan clusters terus dalam out
+    const normalized = normalizeClusterResult(out);
+    setClusters(normalized);
+    setAgreed(false);
+  } catch (e) {
+    setErr(String(e?.message || e));
   }
+}
 
 async function runClustering() {
   const sid = String(sessionId || "").trim();
