@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-console.log("ClusterPage.jsx LOADED ✅ v2026-01-27-CLUSTER-APPLY-SHOW-CUWA-1");
+console.log("ClusterPage.jsx LOADED ✅ v2026-01-27-CLUSTER-CUWA-OUTPUT-1");
 
 const API_BASE =
   (import.meta?.env?.VITE_API_BASE && String(import.meta.env.VITE_API_BASE)) ||
@@ -50,55 +50,107 @@ function normalizeClustersWithCardMap(raw, cardMap) {
   });
 }
 
-/**
- * Normalize Applied CU/WA (hasil Apply) daripada mana-mana bentuk backend:
- * Harap output akhir jadi:
- * {
- *  sessionId, appliedAt,
- *  cus: [{ cuNo, cuTitle, was: [{ waNo, waTitle }] }]
- * }
- */
-function normalizeApplied(any) {
-  if (!any) return null;
+/** Try normalize CU/WA output from any backend shape */
+function normalizeCuWa(any) {
+  if (!any) return { ok: false, sessionId: "", appliedAt: "", cus: [] };
 
-  const root = any?.result ?? any?.data ?? any;
+  // common wrappers
+  const root =
+    any?.data ??
+    any?.result ??
+    any?.output ??
+    any?.payload ??
+    any;
 
-  const sessionId = String(root?.sessionId ?? root?.sid ?? root?.session ?? "").trim();
-  const appliedAt = root?.appliedAt ?? root?.applied_at ?? root?.generatedAt ?? root?.generated_at ?? null;
+  const sessionId = String(
+    root?.sessionId ??
+      root?.sid ??
+      any?.sessionId ??
+      any?.sid ??
+      ""
+  ).trim();
 
+  const appliedAt = String(
+    root?.appliedAt ??
+      root?.mergedAt ??
+      root?.generatedAt ??
+      any?.appliedAt ??
+      any?.generatedAt ??
+      ""
+  ).trim();
+
+  // where CU list might live
   const cusRaw =
     root?.cus ??
-    root?.CUs ??
-    root?.cuList ??
-    root?.competencyUnits ??
-    root?.appliedCus ??
-    root?.applyResult?.cus ??
-    root?.result?.cus ??
-    root?.data?.cus ??
+    root?.cu ??
+    root?.cuwa ??
+    root?.cuWa ??
+    root?.cu_wa ??
+    root?.applied ??
+    root?.items ??
+    root?.list ??
     [];
 
   const cusArr = Array.isArray(cusRaw) ? cusRaw : [];
 
+  // normalize each CU and WA
   const cus = cusArr.map((cu, i) => {
-    const cuNo =
-      String(cu?.cuNo ?? cu?.no ?? cu?.cu_no ?? cu?.code ?? `CU-${String(i + 1).padStart(2, "0")}`);
-    const cuTitle = String(cu?.cuTitle ?? cu?.title ?? cu?.name ?? "").trim() || `(CU ${i + 1})`;
+    const cuTitle = String(
+      cu?.cuTitle ??
+        cu?.title ??
+        cu?.name ??
+        cu?.cu ??
+        cu?.competencyUnit ??
+        `CU ${i + 1}`
+    ).trim();
 
-    const wasRaw = cu?.was ?? cu?.WA ?? cu?.waList ?? cu?.workActivities ?? cu?.activities ?? [];
-    const wasArr = Array.isArray(wasRaw) ? wasRaw : [];
+    const cuNo = String(
+      cu?.cuNo ??
+        cu?.no ??
+        cu?.index ??
+        cu?.cuIndex ??
+        cu?.cuNumber ??
+        i + 1
+    ).trim();
 
-    const was = wasArr.map((wa, j) => {
-      const waNo =
-        String(wa?.waNo ?? wa?.no ?? wa?.wa_no ?? wa?.code ?? `WA-${String(j + 1).padStart(2, "0")}`);
-      const waTitle = String(wa?.waTitle ?? wa?.title ?? wa?.name ?? wa?.text ?? "").trim() || `(WA ${j + 1})`;
+    const waRaw =
+      cu?.was ??
+      cu?.wa ??
+      cu?.workActivities ??
+      cu?.activities ??
+      cu?.items ??
+      [];
+
+    const waArr = Array.isArray(waRaw) ? waRaw : [];
+
+    const was = waArr.map((wa, j) => {
+      const waTitle = String(
+        wa?.waTitle ??
+          wa?.title ??
+          wa?.name ??
+          wa?.wa ??
+          wa?.activity ??
+          `WA ${j + 1}`
+      ).trim();
+
+      const waNo = String(
+        wa?.waNo ??
+          wa?.no ??
+          wa?.index ??
+          wa?.waIndex ??
+          wa?.waNumber ??
+          j + 1
+      ).trim();
+
       return { waNo, waTitle };
     });
 
     return { cuNo, cuTitle, was };
   });
 
-  // kalau tiada sessionId di payload, fallback: null (akan dipaparkan dari state sessionId)
-  return { sessionId, appliedAt, cus };
+  const ok = cus.length > 0;
+
+  return { ok, sessionId, appliedAt, cus };
 }
 
 export default function ClusterPage({ initialSessionId = "Masjid", onBack }) {
@@ -109,18 +161,15 @@ export default function ClusterPage({ initialSessionId = "Masjid", onBack }) {
 
   const [sessionId, setSessionId] = useState(initialSessionId);
 
-  // data asal dari backend (untuk reference)
+  // cluster result
   const [rawResult, setRawResult] = useState(null);
-
-  // data boleh edit (in-memory)
   const [clusters, setClusters] = useState([]); // editable
-
-  // applied CU/WA output
-  const [applyInfo, setApplyInfo] = useState(null); // normalized applied output
-  const [applyBanner, setApplyBanner] = useState(""); // "Apply OK ..."
-
-  // gating
   const [agreed, setAgreed] = useState(false);
+
+  // CU/WA output (hasil Apply)
+  const [applyInfo, setApplyInfo] = useState(null); // {ok, sessionId, appliedAt, cus}
+  const [applyMsg, setApplyMsg] = useState(""); // "Apply OK..."
+  const [cuwaErr, setCuwaErr] = useState("");
 
   // loading/error
   const [busy, setBusy] = useState(false);
@@ -132,9 +181,10 @@ export default function ClusterPage({ initialSessionId = "Masjid", onBack }) {
     setRawResult(null);
     setClusters([]);
     setAgreed(false);
-    setApplyInfo(null);
-    setApplyBanner("");
     setErr("");
+    setApplyInfo(null);
+    setApplyMsg("");
+    setCuwaErr("");
   }, [sessionId]);
 
   async function apiGet(path) {
@@ -189,7 +239,6 @@ export default function ClusterPage({ initialSessionId = "Masjid", onBack }) {
         console.warn("LOAD CARDS FAIL:", p, last);
       }
     }
-
     console.warn("LOAD CARDS fallback EMPTY:", last);
     return [];
   }
@@ -225,75 +274,13 @@ export default function ClusterPage({ initialSessionId = "Masjid", onBack }) {
 
       if (!out) throw new Error(last || "Gagal load cluster result (tiada endpoint serasi).");
 
-      // resolve cardId -> text
       const cards = await loadSessionCards(sid);
       const cardMap = buildCardMap(cards);
       const normalized = normalizeClustersWithCardMap(out, cardMap);
 
       setRawResult(out);
       setClusters(normalized);
-      setAgreed(false); // result baru => perlu agreed semula
-    } catch (e) {
-      setErr(String(e?.message || e));
-    }
-  }
-
-  /**
-   * Load CU/WA (hasil Apply)
-   * Ini penting untuk paparan macam Office-v3.
-   */
-  async function loadApplied() {
-    const sid = String(sessionId || "").trim();
-    if (!sid) return;
-
-    setErr("");
-
-    // Endpoint anda mungkin berbeza. Kita cuba beberapa corak.
-    const tries = [
-      `/api/cluster/applied/${encodeURIComponent(sid)}`,
-      `/api/cluster/applied?session=${encodeURIComponent(sid)}`,
-      `/api/cluster/applied?sid=${encodeURIComponent(sid)}`,
-      `/api/cluster/apply/result/${encodeURIComponent(sid)}`,
-      `/api/cluster/apply/result?session=${encodeURIComponent(sid)}`,
-      `/api/cluster/apply/result?sid=${encodeURIComponent(sid)}`,
-      // ada backend simpan sebagai "cus"
-      `/api/cluster/cus/${encodeURIComponent(sid)}`,
-      `/api/cluster/cus?session=${encodeURIComponent(sid)}`,
-      `/api/cluster/cus?sid=${encodeURIComponent(sid)}`,
-      // fallback: guna /api/cus/:sid jika wujud
-      `/api/cus/${encodeURIComponent(sid)}`,
-      `/api/cus?session=${encodeURIComponent(sid)}`,
-      `/api/cus?sid=${encodeURIComponent(sid)}`,
-    ];
-
-    let out = null;
-    let last = "";
-
-    try {
-      for (const path of tries) {
-        try {
-          console.log("LOAD APPLIED TRY:", path);
-          out = await apiGet(path);
-          console.log("LOAD APPLIED OK:", path, out);
-          break;
-        } catch (e) {
-          last = String(e?.message || e);
-          console.warn("LOAD APPLIED FAIL:", path, last);
-        }
-      }
-
-      if (!out) throw new Error(last || "Gagal load CU/WA (hasil Apply). Tiada endpoint serasi.");
-
-      const normalized = normalizeApplied(out);
-
-      // kalau normalized cus kosong, tetap set supaya user nampak “kosong” (debug)
-      setApplyInfo(normalized);
-      const count = (normalized?.cus || []).length;
-
-      const shownSid = normalized?.sessionId ? normalized.sessionId : sid;
-      setApplyBanner(
-        `Apply OK: sessionId ${shownSid} | cusCount ${count}` + (normalized?.appliedAt ? ` | appliedAt ${normalized.appliedAt}` : "")
-      );
+      setAgreed(false);
     } catch (e) {
       setErr(String(e?.message || e));
     }
@@ -307,8 +294,6 @@ export default function ClusterPage({ initialSessionId = "Masjid", onBack }) {
     setAiLoading(true);
     setErr("");
 
-    console.log("RUN CLUSTER clicked, sid =", sid);
-
     const tries = [
       { path: `/api/cluster/run/${encodeURIComponent(sid)}`, body: {} },
       { path: `/api/cluster/run`, body: { sessionId: sid } },
@@ -321,22 +306,16 @@ export default function ClusterPage({ initialSessionId = "Masjid", onBack }) {
     try {
       for (const t of tries) {
         try {
-          console.log("TRY:", t.path, t.body);
+          console.log("RUN TRY:", t.path, t.body);
           await apiPost(t.path, t.body);
-          console.log("SUCCESS:", t.path);
-
-          // bila clustering baru, apply output lama tak relevan
-          setApplyInfo(null);
-          setApplyBanner("");
-
+          console.log("RUN OK:", t.path);
           await loadResult();
           return;
         } catch (e) {
           lastErr = String(e?.message || e);
-          console.warn("FAIL:", t.path, lastErr);
+          console.warn("RUN FAIL:", t.path, lastErr);
         }
       }
-
       throw new Error(lastErr || "Run AI (Clustering) gagal: semua endpoint tidak serasi.");
     } catch (e) {
       setErr(String(e?.message || e));
@@ -347,30 +326,86 @@ export default function ClusterPage({ initialSessionId = "Masjid", onBack }) {
     }
   }
 
+  /** Load CU/WA output after apply (like paparan lama) */
+  async function loadCuWaOutput(sid) {
+    setCuwaErr("");
+    setApplyInfo(null);
+    setApplyMsg("");
+
+    const tries = [
+      // paling logik (naming)
+      `/api/cluster/applied/${encodeURIComponent(sid)}`,
+      `/api/cluster/applied?session=${encodeURIComponent(sid)}`,
+      `/api/cluster/applied?sessionId=${encodeURIComponent(sid)}`,
+
+      // gaya "cus"
+      `/api/cluster/cus/${encodeURIComponent(sid)}`,
+      `/api/cluster/cus?session=${encodeURIComponent(sid)}`,
+      `/api/cus/${encodeURIComponent(sid)}`,
+      `/api/cus?session=${encodeURIComponent(sid)}`,
+
+      // gaya "apply result"
+      `/api/cluster/apply/result/${encodeURIComponent(sid)}`,
+      `/api/cluster/apply/result?session=${encodeURIComponent(sid)}`,
+    ];
+
+    let out = null;
+    let last = "";
+
+    for (const p of tries) {
+      try {
+        console.log("LOAD CUWA TRY:", p);
+        out = await apiGet(p);
+        console.log("LOAD CUWA OK:", p, out);
+        break;
+      } catch (e) {
+        last = String(e?.message || e);
+        console.warn("LOAD CUWA FAIL:", p, last);
+      }
+    }
+
+    if (!out) {
+      setCuwaErr(last || "Tiada output CU/WA (endpoint tidak jumpa / data belum disimpan).");
+      return;
+    }
+
+    const normalized = normalizeCuWa(out);
+
+    if (!normalized.ok) {
+      setCuwaErr("Output CU/WA kosong (data tidak dijumpai dalam response).");
+      setApplyInfo(normalized);
+      return;
+    }
+
+    setApplyInfo(normalized);
+    const s = normalized.sessionId || sid;
+    const at = normalized.appliedAt ? ` | appliedAt ${normalized.appliedAt}` : "";
+    setApplyMsg(`Apply OK: sessionId ${s} | cusCount ${normalized.cus.length}${at}`);
+  }
+
   async function applyMerge() {
     const sid = String(sessionId || "").trim();
     if (!sid) return alert("Sila isi Session dulu.");
 
-    if (!agreed) {
-      return alert("Sila tekan 'Agreed' dahulu selepas anda selesai edit clustering.");
-    }
+    if (!agreed) return alert("Sila tekan 'Agreed' dahulu selepas anda selesai edit clustering.");
 
     setBusy(true);
     setErr("");
-
-    const payload = { clusters, source: "manual_edit_before_merge" };
+    setCuwaErr("");
+    setApplyInfo(null);
+    setApplyMsg("");
 
     const tries = [
-      { path: `/api/cluster/apply/${encodeURIComponent(sid)}`, body: payload },
-      { path: `/api/cluster/apply`, body: { sessionId: sid, ...payload } },
-      { path: `/api/cluster/apply`, body: { sid, ...payload } },
-      { path: `/api/cluster/apply?session=${encodeURIComponent(sid)}`, body: payload },
+      { path: `/api/cluster/apply/${encodeURIComponent(sid)}`, body: { clusters, source: "manual_edit_before_merge" } },
+      { path: `/api/cluster/apply`, body: { sessionId: sid, clusters, source: "manual_edit_before_merge" } },
+      { path: `/api/cluster/apply`, body: { sid, clusters, source: "manual_edit_before_merge" } },
+      { path: `/api/cluster/apply?session=${encodeURIComponent(sid)}`, body: { clusters, source: "manual_edit_before_merge" } },
     ];
 
     let lastErr = "";
-    try {
-      let out = null;
+    let out = null;
 
+    try {
       for (const t of tries) {
         try {
           console.log("APPLY TRY:", t.path, t.body);
@@ -385,20 +420,23 @@ export default function ClusterPage({ initialSessionId = "Masjid", onBack }) {
 
       if (!out) throw new Error(lastErr || "Apply AI (Merge) gagal: semua endpoint tidak serasi.");
 
+      // Cuba baca CU/WA terus dari response apply (kalau backend pulangkan terus)
+      const direct = normalizeCuWa(out);
+      if (direct.ok) {
+        setApplyInfo(direct);
+        const s = direct.sessionId || sid;
+        const at = direct.appliedAt ? ` | appliedAt ${direct.appliedAt}` : "";
+        setApplyMsg(`Apply OK: sessionId ${s} | cusCount ${direct.cus.length}${at}`);
+      } else {
+        // jika apply response tak ada CU/WA, kita GET output selepas apply
+        await loadCuWaOutput(sid);
+      }
+
       alert("Apply AI (Merge) berjaya. Output CU/WA akan dipaparkan di bawah.");
 
-      // ✅ PENTING: JANGAN redirect ke CPC.
-      // Lepas apply, kita terus load CU/WA (hasil Apply)
-      await loadApplied();
-
-      // optional: kekalkan cluster result pun boleh refresh (tapi ini akan reset agreed=false)
-      // Kalau Ts nak kekal agreed hijau, jangan panggil loadResult() di sini.
-      // await loadResult();
-
-      // scroll ke output CU/WA
-      setTimeout(() => {
-        document.getElementById("apply-output")?.scrollIntoView({ behavior: "smooth" });
-      }, 50);
+      // Optional: refresh cluster result supaya UI konsisten
+      // (jangan reset CU/WA)
+      await loadResult();
     } catch (e) {
       setErr(String(e?.message || e));
       alert(String(e?.message || e));
@@ -459,8 +497,6 @@ export default function ClusterPage({ initialSessionId = "Masjid", onBack }) {
   // load last result on mount
   useEffect(() => {
     loadResult();
-    // cuba juga load applied (kalau ada apply sebelum ini)
-    loadApplied();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -500,7 +536,12 @@ export default function ClusterPage({ initialSessionId = "Masjid", onBack }) {
           Apply AI (Merge)
         </button>
 
-        <button onClick={loadApplied} disabled={busy} style={{ height: 36 }}>
+        <button
+          onClick={() => loadCuWaOutput(String(sessionId || "").trim())}
+          disabled={busy}
+          style={{ height: 36 }}
+          title="Tarik semula output CU/WA selepas Apply"
+        >
           Reload CU (cus)
         </button>
       </div>
@@ -517,33 +558,8 @@ export default function ClusterPage({ initialSessionId = "Masjid", onBack }) {
 
       {err ? <div style={{ marginTop: 10, color: "#b91c1c" }}>Error: {err}</div> : null}
 
-      {/* ===== Banner Apply OK ===== */}
-      {applyBanner ? (
-        <div
-          style={{
-            marginTop: 12,
-            padding: "10px 12px",
-            borderRadius: 12,
-            border: "1px solid #bbf7d0",
-            background: "#f0fdf4",
-            color: "#166534",
-            fontWeight: 700,
-            fontSize: 13,
-          }}
-        >
-          {applyBanner}
-        </div>
-      ) : null}
-
       {/* ruang edit sebelum merge */}
-      <div
-        style={{
-          marginTop: 16,
-          padding: 14,
-          border: "1px solid #ddd",
-          borderRadius: 14,
-        }}
-      >
+      <div style={{ marginTop: 16, padding: 14, border: "1px solid #ddd", borderRadius: 14 }}>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
           <div style={{ fontWeight: 800 }}>Edit Clustering (sebelum Merge)</div>
           <div style={{ display: "flex", gap: 10 }}>
@@ -595,14 +611,7 @@ export default function ClusterPage({ initialSessionId = "Masjid", onBack }) {
                 background: agreed ? "#fcfcfc" : "#fff",
               }}
             >
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  gap: 10,
-                  alignItems: "center",
-                }}
-              >
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
                 <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
                   <input
                     value={c.title}
@@ -642,10 +651,9 @@ export default function ClusterPage({ initialSessionId = "Masjid", onBack }) {
                       alignItems: "center",
                       padding: "6px 0",
                       borderBottom: "1px dashed #eee",
-                      flexWrap: "wrap",
                     }}
                   >
-                    <div style={{ flex: 1, minWidth: 280 }}>• {it.text || <i>(tiada teks)</i>}</div>
+                    <div style={{ flex: 1 }}>• {it.text || <i>(tiada teks)</i>}</div>
 
                     <select
                       disabled={agreed}
@@ -669,80 +677,81 @@ export default function ClusterPage({ initialSessionId = "Masjid", onBack }) {
                   </div>
                 ))}
 
-                {(c.items || []).length === 0 ? <div style={{ marginTop: 8, opacity: 0.75 }}>(Cluster kosong)</div> : null}
+                {(c.items || []).length === 0 ? (
+                  <div style={{ marginTop: 8, opacity: 0.75 }}>(Cluster kosong)</div>
+                ) : null}
               </div>
             </div>
           ))
         )}
       </div>
 
-      {/* ===== OUTPUT CU/WA (hasil Apply) ===== */}
-      <div id="apply-output" style={{ marginTop: 18 }}>
-        <div style={{ fontWeight: 900, fontSize: 18, marginBottom: 10 }}>CU/WA (hasil Apply)</div>
+      {/* ===== CU/WA output (hasil Apply) ===== */}
+      <div style={{ marginTop: 18, paddingTop: 10, borderTop: "2px solid #eee" }}>
+        <h2 style={{ margin: "8px 0" }}>CU/WA (hasil Apply)</h2>
 
-        {!applyInfo ? (
-          <div style={{ opacity: 0.75 }}>
+        {applyMsg ? (
+          <div
+            style={{
+              background: "#ecfdf5",
+              border: "1px solid #bbf7d0",
+              padding: "10px 12px",
+              borderRadius: 10,
+              marginBottom: 12,
+              fontSize: 13,
+            }}
+          >
+            <b>{applyMsg}</b>
+          </div>
+        ) : null}
+
+        {cuwaErr ? <div style={{ color: "#b91c1c", marginBottom: 10 }}>Error: {cuwaErr}</div> : null}
+
+        {!applyInfo?.ok ? (
+          <div style={{ opacity: 0.8 }}>
             Tiada output CU/WA. Klik <b>Apply AI (Merge)</b> atau <b>Reload CU (cus)</b>.
           </div>
-        ) : (applyInfo?.cus || []).length === 0 ? (
-          <div style={{ opacity: 0.75 }}>
-            Output CU/WA ditemui tetapi <b>cus kosong</b>. Ini biasanya tanda backend belum pulangkan struktur “cus/was”.
-            <div style={{ marginTop: 6, fontSize: 12, opacity: 0.75 }}>
-              Tip: buka Network → response “applied/cus” untuk lihat key sebenar yang backend pulangkan.
-            </div>
-          </div>
         ) : (
-          <>
-            <div style={{ fontSize: 12, opacity: 0.75, marginBottom: 8 }}>
-              sessionId: <b>{applyInfo.sessionId || String(sessionId || "")}</b>
-              {applyInfo.appliedAt ? (
-                <>
-                  {" "}
-                  | appliedAt: <b>{String(applyInfo.appliedAt)}</b>
-                </>
-              ) : null}
-            </div>
+          <div>
+            {(applyInfo.cus || []).map((cu, idx) => {
+              const cuNo = String(cu?.cuNo ?? idx + 1).padStart(2, "0");
+              return (
+                <div
+                  key={`${cuNo}-${idx}`}
+                  style={{
+                    border: "1px solid #ddd",
+                    borderRadius: 14,
+                    padding: 14,
+                    marginBottom: 12,
+                    background: "#fff",
+                  }}
+                >
+                  <div style={{ fontWeight: 900, marginBottom: 6 }}>
+                    CU-{cuNo}: {cu.cuTitle}
+                  </div>
 
-            {(applyInfo.cus || []).map((cu, idx) => (
-              <div
-                key={`${cu.cuNo}-${idx}`}
-                style={{
-                  border: "1px solid #e5e7eb",
-                  borderRadius: 14,
-                  padding: 14,
-                  marginBottom: 12,
-                  background: "#fff",
-                }}
-              >
-                <div style={{ fontWeight: 900, marginBottom: 8 }}>
-                  {String(cu.cuNo || `CU-${String(idx + 1).padStart(2, "0")}`)}: {cu.cuTitle}
-                </div>
-
-                <div style={{ paddingLeft: 14 }}>
-                  {(cu.was || []).length ? (
-                    <ul style={{ margin: 0, paddingLeft: 18 }}>
-                      {(cu.was || []).map((wa, j) => (
-                        <li key={`${cu.cuNo}-${wa.waNo}-${j}`} style={{ marginBottom: 4 }}>
-                          <b>{String(wa.waNo || `WA-${String(j + 1).padStart(2, "0")}`)}:</b>{" "}
-                          {String(wa.waTitle || "")}
+                  <ul style={{ margin: 0, paddingLeft: 18 }}>
+                    {(cu.was || []).map((wa, j) => {
+                      const waNo = String(wa?.waNo ?? j + 1).padStart(2, "0");
+                      return (
+                        <li key={`${cuNo}-${waNo}-${j}`} style={{ margin: "2px 0" }}>
+                          <b>WA-{waNo}:</b> {wa.waTitle}
                         </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <div style={{ opacity: 0.75 }}>(Tiada WA)</div>
-                  )}
+                      );
+                    })}
+                  </ul>
                 </div>
-              </div>
-            ))}
-          </>
+              );
+            })}
+          </div>
         )}
-      </div>
 
-      {rawResult?.generatedAt ? (
-        <div style={{ marginTop: 12, fontSize: 12, opacity: 0.75 }}>
-          cluster generatedAt: {String(rawResult.generatedAt)}
-        </div>
-      ) : null}
+        {rawResult?.generatedAt ? (
+          <div style={{ marginTop: 10, fontSize: 12, opacity: 0.75 }}>
+            cluster generatedAt: {String(rawResult.generatedAt)}
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }
