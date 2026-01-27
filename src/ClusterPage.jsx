@@ -155,6 +155,8 @@ export default function ClusterPage({ initialSessionId = "Masjid", onBack }) {
   const [compareMsg, setCompareMsg] = useState("");
   const [compareErr, setCompareErr] = useState("");
   const [compareLoading, setCompareLoading] = useState(false);
+  const [indexLoading, setIndexLoading] = useState(false);
+  const [indexMsg, setIndexMsg] = useState("");
 
   // loading/error
   const [busy, setBusy] = useState(false);
@@ -422,6 +424,23 @@ export default function ClusterPage({ initialSessionId = "Masjid", onBack }) {
     }
   }
 
+  async function buildMySpikeIndex() {
+    setIndexMsg("");
+    setCompareErr("");
+    setIndexLoading(true);
+    try {
+      const out = await apiPost(`/api/myspike/index/build`, {});
+      setIndexMsg("MySPIKE index berjaya dibina.");
+      // optional: terus run compare lepas build
+      // await runMySpikeComparison();
+      console.log("INDEX BUILD OK:", out);
+    } catch (e) {
+      setIndexMsg(`Gagal bina index: ${String(e?.message || e)}`);
+    } finally {
+      setIndexLoading(false);
+    }
+  }
+  
   async function runMySpikeComparison() {
     const sid = String(sessionId || "").trim();
     if (!sid) return alert("Sila isi Session dulu.");
@@ -564,6 +583,14 @@ export default function ClusterPage({ initialSessionId = "Masjid", onBack }) {
           Reload CU (cus)
         </button>
 
+        <button
+          onClick={buildMySpikeIndex}
+          disabled={busy || indexLoading}
+          style={{ height: 36 }}
+        >
+          {indexLoading ? "Building Index..." : "Build MySPIKE Index"}
+        </button>
+        
         <button
           onClick={runMySpikeComparison}
           disabled={busy || compareLoading}
