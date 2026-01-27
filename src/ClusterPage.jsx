@@ -90,43 +90,81 @@ function normalizeMySpikeCompare(any) {
   if (!any) return { ok: false, rows: [], summary: "" };
 
   const root = any?.data ?? any?.result ?? any;
+
+  // cuba cari senarai row dari pelbagai kemungkinan
   const rowsRaw =
     root?.rows ??
     root?.items ??
     root?.comparisons ??
     root?.list ??
     root?.results ??
+    root?.data ??
     [];
 
   const rowsArr = Array.isArray(rowsRaw) ? rowsRaw : [];
 
+  // helper: parse string "IL-xxx — TITLE (score 0.4649)"
+  function parseTopMatch(str) {
+    const s = String(str || "").trim();
+    if (!s) return { code: "", title: "", score: NaN };
+
+    // split code/title by em dash or dash
+    let code = "";
+    let title = s;
+    if (s.includes("—")) {
+      const parts = s.split("—");
+      code = String(parts[0] || "").trim();
+      title = String(parts.slice(1).join("—") || "").trim();
+    } else if (s.includes(" - ")) {
+      const parts = s.split(" - ");
+      code = String(parts[0] || "").trim();
+      title = String(parts.slice(1).join(" - ") || "").trim();
+    }
+
+    // extract score
+    const m = s.match(/score\s*([0-9]*\.[0-9]+)/i);
+    const score = m ? Number(m[1]) : NaN;
+
+    // remove "(score x)" from title for cleanliness
+    title = title.replace(/\(.*?score.*?\)/i, "").trim();
+
+    return { code, title, score };
+  }
+
   const rows = rowsArr.map((r) => {
-    const myspikeCU = String(
-      r?.myspikeCU ?? r?.myspikeCu ?? r?.spikeCU ?? r?.spikeCu ?? r?.matchedCuTitle ?? r?.matchTitle ?? ""
+    const cuTitle = String(
+      r?.cuTitle ?? r?.cu ?? r?.dacumCU ?? r?.iNossCu ?? r?.title ?? ""
     ).trim();
 
-    const myspikeNossCode = String(
-      r?.myspikeNossCode ?? r?.nossCode ?? r?.code ?? r?.matchedNossCode ?? ""
+    const status = String(r?.status ?? r?.matchStatus ?? "").trim();
+
+    const bestScore = Number(r?.bestScore ?? r?.score ?? r?.similarity ?? 0) || 0;
+
+    const topStr = String(
+      r?.topMySpikeMatch ?? r?.topMatch ?? r?.top ?? r?.myspikeMatch ?? ""
     ).trim();
 
-    const score = Number(r?.score ?? r?.bestScore ?? r?.similarity ?? 0) || 0;
-
-    // CU from our side
-    const dacumCU = String(r?.dacumCU ?? r?.dacumCu ?? r?.cuTitle ?? r?.cu ?? r?.iNossCu ?? r?.sourceCu ?? "").trim();
+    const parsed = parseTopMatch(topStr);
 
     return {
-      dacumCU,
-      myspikeCU,
-      myspikeNossCode,
-      score,
-      raw: r,
+      cuTitle,
+      status: status || "TIADA",
+      bestScore,
+      topCode: parsed.code,
+      topTitle: parsed.title || topStr, // fallback: papar string asal
     };
   });
 
+  // summary (ikut backend lama)
+  const indexCount = root?.mySpikeIndex ?? root?.indexCount ?? root?.totalIndex;
+  const ada = root?.ada ?? root?.found ?? root?.matchCount;
+  const tiada = root?.tiada ?? root?.notFound ?? root?.missCount;
+
   const summaryParts = [];
-  if (typeof root?.indexCount !== "undefined") summaryParts.push(`MySPIKE Index: ${root.indexCount}`);
-  if (typeof root?.found !== "undefined") summaryParts.push(`ADA: ${root.found}`);
-  if (typeof root?.notFound !== "undefined") summaryParts.push(`TIADA: ${root.notFound}`);
+  if (typeof indexCount !== "undefined") summaryParts.push(`MySPIKE Index: ${indexCount}`);
+  if (typeof ada !== "undefined") summaryParts.push(`ADA: ${ada}`);
+  if (typeof tiada !== "undefined") summaryParts.push(`TIADA: ${tiada}`);
+
   const summary = summaryParts.join(" | ");
 
   return { ok: rows.length > 0, rows, summary };
@@ -773,21 +811,21 @@ export default function ClusterPage({ initialSessionId = "Masjid", onBack }) {
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
-                <tr>
+                  <tr>
                   <th style={{ textAlign: "left", borderBottom: "1px solid #ddd", padding: 8 }}>CU (iNOSS)</th>
-                  <th style={{ textAlign: "left", borderBottom: "1px solid #ddd", padding: 8 }}>MySPIKE CU</th>
-                  <th style={{ textAlign: "left", borderBottom: "1px solid #ddd", padding: 8 }}>NOSS Code</th>
-                  <th style={{ textAlign: "left", borderBottom: "1px solid #ddd", padding: 8 }}>Score</th>
+                  <th style={{ textAlign: "left", borderBottom: "1px solid #ddd", padding: 8 }}>Status</th>
+                  <th style={{ textAlign: "left", borderBottom: "1px solid #ddd", padding: 8 }}>Best Score</th>
+                  <th style={{ textAlign: "left", borderBottom: "1px solid #ddd", padding: 8 }}>Top MySPIKE Match</th>
                 </tr>
               </thead>
               <tbody>
                 {compareInfo.rows.map((r, i) => (
                   <tr key={i}>
-                    <td style={{ borderBottom: "1px solid #f0f0f0", padding: 8 }}>{r.dacumCU || "-"}</td>
-                    <td style={{ borderBottom: "1px solid #f0f0f0", padding: 8 }}>{r.myspikeCU || "-"}</td>
-                    <td style={{ borderBottom: "1px solid #f0f0f0", padding: 8 }}>{r.myspikeNossCode || "-"}</td>
+                    <td style={{ borderBottom: "1px solid #f0f0f0", padding: 8 }}>{r.cuTitle || "-"}</td>
+                    <td style={{ borderBottom: "1px solid #f0f0f0", padding: 8 }}>{r.status || "-"}</td>
+                    <td style={{ borderBottom: "1px solid #f0f0f0", padding: 8 }}>{Number(r.bestScore || 0).toFixed(4)}</td>
                     <td style={{ borderBottom: "1px solid #f0f0f0", padding: 8 }}>
-                      {Number.isFinite(r.score) ? r.score.toFixed(4) : "0.0000"}
+                      {r.topCode ? `${r.topCode} — ${r.topTitle}` : (r.topTitle || "-")}
                     </td>
                   </tr>
                 ))}
