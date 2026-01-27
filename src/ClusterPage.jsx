@@ -164,38 +164,38 @@ export default function ClusterPage({ initialSessionId = "Masjid", onBack }) {
     }
   }
 
-    async function runClustering() {
-      const sid = String(sessionId || "").trim();
-      if (!sid) return alert("Sila isi Session dulu.");
+async function runClustering() {
+  const sid = String(sessionId || "").trim();
+  if (!sid) return alert("Sila isi Session dulu.");
 
-      setBusy(true);
-      setAiLoading(true);
-      setErr("");
+  setBusy(true);
+  setAiLoading(true);
+  setErr("");
 
-      try {
-    // 1) Cuba format A: /api/cluster/run/:sessionId
-      try {
-        await apiPost(`/api/cluster/run/${encodeURIComponent(sid)}`, {});
-      } catch (e1) {
-        const msg1 = String(e1?.message || e1);
+  try {
+    // Cuba A: /api/cluster/run/:sessionId
+    try {
+      await apiPost(`/api/cluster/run/${encodeURIComponent(sid)}`, {});
+    } catch (e1) {
+      const msg1 = String(e1?.message || e1);
 
-      // Kalau 404, cuba format B: /api/cluster/run (body)
-        if (/->\s*404\b/.test(msg1) || /404\b/.test(msg1)) {
-          await apiPost(`/api/cluster/run`, { sessionId: sid });
-        } else {
-          throw e1;
-        }
+      // Jika 404, cuba B: /api/cluster/run (body)
+      if (/404\b/.test(msg1)) {
+        await apiPost(`/api/cluster/run`, { sessionId: sid });
+      } else {
+        throw e1;
       }
-
-      await loadResult();
-    } catch (e) {
-      setErr(String(e?.message || e));
-      alert(String(e?.message || e));
-    } finally {
-      setBusy(false);
-      setAiLoading(false);
     }
+
+    await loadResult();
+  } catch (e) {
+    setErr(String(e?.message || e));
+    alert(String(e?.message || e));
+  } finally {
+    setBusy(false);
+    setAiLoading(false);
   }
+}
 
   async function applyMerge() {
     const sid = String(sessionId || "").trim();
