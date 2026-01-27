@@ -13,6 +13,10 @@ export default function LiveBoard({ onAgreed }) {
   }, []);
 
   const [sessionId, setSessionId] = useState("Masjid");
+
+  // ✅ NEW: flag untuk tunjukkan butang "Cluster Page"
+  const [agreedOnce, setAgreedOnce] = useState(false);
+
   const [cards, setCards] = useState([]);
   const [freeze, setFreeze] = useState(false);
 
@@ -53,10 +57,19 @@ export default function LiveBoard({ onAgreed }) {
           `/api/session/config/${encodeURIComponent(sid)}`
         );
         if (!alive) return;
+
         const nextLang = String(cfg?.lang || "MS").toUpperCase();
         setLang(nextLang === "EN" ? "EN" : "MS");
         setLangLocked(!!cfg?.langLocked);
         setLockedAt(cfg?.lockedAt || null);
+
+        // ✅ jika session dah pernah lock sebelum ini, anggap sudah Agreed
+        if (cfg?.langLocked) {
+          setAgreedOnce(true);
+          setFreeze(true); // lock senarai kad
+        } else {
+          setAgreedOnce(false);
+        }
       } catch (e) {
         if (!alive) return;
         setCfgErr(String(e?.message || e));
@@ -125,19 +138,21 @@ export default function LiveBoard({ onAgreed }) {
     }
   }
 
-  async function goAgreed() {
+  // ✅ NEW: Agreed hanya LOCK (tidak navigate)
+  async function doAgreedLockOnly() {
     const sid = String(sessionId || "").trim();
     if (!sid) return alert("Sila isi Session dulu.");
+
+    // 0) Freeze senarai kad (kunci perbincangan)
+    setFreeze(true);
 
     // 1) Pastikan config lang disimpan (kalau belum lock)
     try {
       if (!langLocked) {
-        await apiPost(`/api/session/config/${encodeURIComponent(sid)}`, {
-          lang,
-        });
+        await apiPost(`/api/session/config/${encodeURIComponent(sid)}`, { lang });
       }
     } catch (e) {
-      // kalau gagal pun, kita masih boleh proceed lock (atau fail lock)
+      // kalau gagal pun, kita cuba lock
     }
 
     // 2) Lock bahasa (wajib sebelum clustering)
@@ -151,11 +166,21 @@ export default function LiveBoard({ onAgreed }) {
       const msg = String(e?.message || e);
       if (!/sudah dikunci|locked/i.test(msg)) {
         alert(msg);
+        setFreeze(false); // rollback freeze kalau lock gagal serius
         return;
       }
+      // dah lock pun dikira ok
+      setLangLocked(true);
     }
 
-    // 3) Navigate ke clustering
+    // 3) Set flag untuk munculkan butang Cluster Page
+    setAgreedOnce(true);
+  }
+
+  // ✅ NEW: hanya bila user tekan "Cluster Page"
+  function goClusterPage() {
+    const sid = String(sessionId || "").trim();
+    if (!sid) return alert("Sila isi Session dulu.");
     onAgreed?.(sid);
   }
 
@@ -165,8 +190,7 @@ export default function LiveBoard({ onAgreed }) {
     else document.exitFullscreen?.();
   }
 
-  const langLabel =
-    lang === "EN" ? "English (EN)" : "Bahasa Melayu (MS)";
+  const langLabel = lang === "EN" ? "English (EN)" : "Bahasa Melayu (MS)";
   const lockText = langLocked
     ? `DIKUNCI${lockedAt ? ` @ ${lockedAt}` : ""}`
     : "BELUM LOCK";
@@ -207,7 +231,11 @@ export default function LiveBoard({ onAgreed }) {
 
         <input
           value={sessionId}
-          onChange={(e) => setSessionId(e.target.value)}
+          onChange={(e) => {
+            setSessionId(e.target.value);
+            // bila tukar session baru, reset flag (akan diset semula melalui loadConfig jika dah lock)
+            setAgreedOnce(false);
+          }}
           placeholder="cth: Masjid / Office"
           style={{
             width: "100%",
@@ -324,22 +352,53 @@ export default function LiveBoard({ onAgreed }) {
           )}
         </div>
 
-        {/* AGREED – DI BAWAH SENARAI KAD */}
-        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
+        {/* ✅ BUTANG BAHARU: Agreed + Cluster Page */}
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "flex-end",
+            gap: 10,
+            marginTop: 12,
+          }}
+        >
           <button
-            onClick={goAgreed}
+            onClick={doAgreedLockOnly}
+            disabled={agreedOnce}
             style={{
               padding: "10px 16px",
               borderRadius: 12,
               border: "1px solid #111",
-              background: "#111",
+              background: agreedOnce ? "#666" : "#111",
               color: "#fff",
-              cursor: "pointer",
+              cursor: agreedOnce ? "not-allowed" : "pointer",
               fontWeight: 700,
             }}
+            title={
+              agreedOnce
+                ? "Sudah Agreed & senarai kad telah dikunci"
+                : "Kunci senarai kad (Agreed)"
+            }
           >
-            Agreed (Ke Clustering)
+            Agreed
           </button>
+
+          {agreedOnce && (
+            <button
+              onClick={goClusterPage}
+              style={{
+                padding: "10px 16px",
+                borderRadius: 12,
+                border: "1px solid #111",
+                background: "#0b3c6d",
+                color: "#fff",
+                cursor: "pointer",
+                fontWeight: 700,
+              }}
+              title="Teruskan ke Cluster Page"
+            >
+              Cluster Page
+            </button>
+          )}
         </div>
       </div>
     </div>
