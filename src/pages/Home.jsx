@@ -17,7 +17,7 @@ export default function Home() {
         </p>
 
         <div style={styles.features}>
-          <FeatureCard title="NOSS.ai" onClick={() => navigate("/panel")} />
+          <FeatureCard title="NOSS.ai" onClick={() => (window.location.hash = "#/panel")} />
           <FeatureCard title="WIM.ai" disabled />
           <FeatureCard title="SOALAN.ai" disabled />
         </div>
