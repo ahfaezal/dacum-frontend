@@ -91,69 +91,70 @@ function normalizeMySpikeCompare(any) {
 
   const root = any?.data ?? any?.result ?? any;
 
-  // cuba cari senarai row dari pelbagai kemungkinan
+  // cari list rows di pelbagai lokasi
   const rowsRaw =
     root?.rows ??
     root?.items ??
     root?.comparisons ??
     root?.list ??
     root?.results ??
-    root?.data ??
+    root?.output ??
     [];
 
   const rowsArr = Array.isArray(rowsRaw) ? rowsRaw : [];
 
-  // helper: parse string "IL-xxx — TITLE (score 0.4649)"
-  function parseTopMatch(str) {
-    const s = String(str || "").trim();
-    if (!s) return { code: "", title: "", score: NaN };
-
-    // split code/title by em dash or dash
-    let code = "";
-    let title = s;
-    if (s.includes("—")) {
-      const parts = s.split("—");
-      code = String(parts[0] || "").trim();
-      title = String(parts.slice(1).join("—") || "").trim();
-    } else if (s.includes(" - ")) {
-      const parts = s.split(" - ");
-      code = String(parts[0] || "").trim();
-      title = String(parts.slice(1).join(" - ") || "").trim();
-    }
-
-    // extract score
-    const m = s.match(/score\s*([0-9]*\.[0-9]+)/i);
-    const score = m ? Number(m[1]) : NaN;
-
-    // remove "(score x)" from title for cleanliness
-    title = title.replace(/\(.*?score.*?\)/i, "").trim();
-
-    return { code, title, score };
-  }
-
   const rows = rowsArr.map((r) => {
+    // CU title (ikut nama2 yang biasa muncul)
     const cuTitle = String(
-      r?.cuTitle ?? r?.cu ?? r?.dacumCU ?? r?.iNossCu ?? r?.title ?? ""
+      r?.cuTitle ??
+      r?.cu ??
+      r?.iNossCU ??
+      r?.iNossCu ??
+      r?.sourceCu ??
+      r?.dacumCU ??
+      r?.title ??
+      ""
     ).trim();
 
-    const status = String(r?.status ?? r?.matchStatus ?? "").trim();
+    // status (ADA/TIADA)
+    const status = String(r?.status ?? r?.matchStatus ?? "").trim() || "TIADA";
 
-    const bestScore = Number(r?.bestScore ?? r?.score ?? r?.similarity ?? 0) || 0;
+    // bestScore (ikut nama2 biasa)
+    const bestScore = Number(
+      r?.bestScore ??
+      r?.score ??
+      r?.similarity ??
+      r?.best ??
+      0
+    ) || 0;
 
-    const topStr = String(
-      r?.topMySpikeMatch ?? r?.topMatch ?? r?.top ?? r?.myspikeMatch ?? ""
+    // Top match (format lama: "CODE — TITLE (score x)")
+    const topMySpikeMatch = String(
+      r?.topMySpikeMatch ??
+      r?.topMatch ??
+      r?.top ??
+      r?.match ??
+      r?.myspike ??
+      r?.myspikeMatch ??
+      r?.topMySpike ??
+      ""
     ).trim();
 
-    const parsed = parseTopMatch(topStr);
-
-    return {
-      cuTitle,
-      status: status || "TIADA",
-      bestScore,
-      topCode: parsed.code,
-      topTitle: parsed.title || topStr, // fallback: papar string asal
-    };
+    return { cuTitle, status, bestScore, topMySpikeMatch };
   });
+
+  // summary (format lama)
+  const indexCount = root?.myspikeIndex ?? root?.indexCount ?? root?.totalIndex;
+  const ada = root?.ada ?? root?.found ?? root?.matchCount;
+  const tiada = root?.tiada ?? root?.notFound ?? root?.missCount;
+
+  const summaryParts = [];
+  if (typeof indexCount !== "undefined") summaryParts.push(`MySPIKE Index: ${indexCount}`);
+  if (typeof ada !== "undefined") summaryParts.push(`ADA: ${ada}`);
+  if (typeof tiada !== "undefined") summaryParts.push(`TIADA: ${tiada}`);
+
+  return { ok: rows.length > 0, rows, summary: summaryParts.join(" | ") };
+}
 
   // summary (ikut backend lama)
   const indexCount = root?.mySpikeIndex ?? root?.indexCount ?? root?.totalIndex;
@@ -506,6 +507,15 @@ export default function ClusterPage({ initialSessionId = "Masjid", onBack }) {
       // endpoint rasmi dalam server.js (MySPIKE Comparator)
       const out = await apiPost(`/api/s2/compare`, body);
       const norm = normalizeMySpikeCompare(out);
+      if (norm?.rows?.length && Array.isArray(cusPayload)) {
+        norm.rows = norm.rows.map((r, i) => {
+          const fallbackCu = String(cusPayload?.[i]?.cuTitle || "").trim();
+          return {
+            ...r,
+            cuTitle: String(r?.cuTitle || "").trim() || fallbackCu,
+          };
+        });
+      }
 
       if (!norm.ok) {
         throw new Error("Response MySPIKE tidak mengandungi senarai perbandingan untuk dipaparkan.");
