@@ -69,12 +69,12 @@ const styles = {
   brand: {
     display: "flex",
     alignItems: "center",
-    gap: 16,
-    marginBottom: 30,
+    gap: 14,
+    marginBottom: 26,
   },
   // ✅ tambah: size logo
   logo: {
-    height: 56,
+    height: 64,
     width: "auto",
     display: "block",
   },
