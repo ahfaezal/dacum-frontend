@@ -258,51 +258,51 @@ async function applyMerge() {
   setBusy(true);
   setErr("");
 
-  const payload = {
-    sessionId: sid,
-    sid,
-    clusters,
-    source: "manual_edit_before_merge",
-  };
-
-  // Cuba beberapa endpoint yang biasa wujud (ikut pattern run/result)
+  // fallback endpoint (ikut corak backend berbeza-beza)
   const tries = [
-    // A) route yang anda cuba sekarang (tapi 404)
-    { path: `/api/cluster/apply/${encodeURIComponent(sid)}`, body: payload },
+    // A) style lama (path param)
+    { path: `/api/cluster/apply/${encodeURIComponent(sid)}`, body: { clusters, source: "manual_edit_before_merge" } },
 
-    // B) route tanpa :sid (guna body)
-    { path: `/api/cluster/apply`, body: payload },
+    // B) style body sessionId
+    { path: `/api/cluster/apply`, body: { sessionId: sid, clusters, source: "manual_edit_before_merge" } },
 
-    // C) nama endpoint yang lazim digunakan untuk merge
-    { path: `/api/cluster/merge/${encodeURIComponent(sid)}`, body: payload },
-    { path: `/api/cluster/merge`, body: payload },
+    // C) style body sid
+    { path: `/api/cluster/apply`, body: { sid, clusters, source: "manual_edit_before_merge" } },
 
-    // D) ada backend guna "commit/finalize/confirm"
-    { path: `/api/cluster/commit/${encodeURIComponent(sid)}`, body: payload },
-    { path: `/api/cluster/finalize/${encodeURIComponent(sid)}`, body: payload },
+    // D) style query
+    { path: `/api/cluster/apply?session=${encodeURIComponent(sid)}`, body: { clusters, source: "manual_edit_before_merge" } },
   ];
 
   let lastErr = "";
-
   try {
+    let out = null;
+
     for (const t of tries) {
       try {
-        console.log("APPLY/MERGE TRY:", t.path);
-        const out = await apiPost(t.path, t.body);
-        console.log("APPLY/MERGE OK:", t.path, out);
-
-        alert("Apply AI (Merge) berjaya. Sila semak output seterusnya.");
-        return;
+        console.log("APPLY TRY:", t.path, t.body);
+        out = await apiPost(t.path, t.body);
+        console.log("APPLY OK:", t.path, out);
+        break;
       } catch (e) {
         lastErr = String(e?.message || e);
-        console.warn("APPLY/MERGE FAIL:", t.path, lastErr);
+        console.warn("APPLY FAIL:", t.path, lastErr);
       }
     }
 
-    throw new Error(
-      lastErr ||
-        "Apply AI (Merge) gagal: semua endpoint tidak serasi. Backend tiada route apply/merge."
-    );
+    if (!out) throw new Error(lastErr || "Apply AI (Merge) gagal: semua endpoint tidak serasi.");
+
+    alert("Apply AI (Merge) berjaya. Sila semak output seterusnya.");
+
+    // 1) Refresh result supaya UI konsisten (optional)
+    await loadResult();
+
+    // 2) ✅ AUTO PERGI KE OUTPUT SETERUSNYA
+    // Pilih SATU destinasi yang betul untuk flow anda:
+    // - CPC: "#/cpc?session="
+    // - CP:  "#/cp?session="
+    // - Board: "#/board?session=" (jika board anda guna query)
+    window.location.hash = `#/cpc?session=${encodeURIComponent(sid)}`;
+
   } catch (e) {
     setErr(String(e?.message || e));
     alert(String(e?.message || e));
