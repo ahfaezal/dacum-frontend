@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-console.log("ClusterPage.jsx LOADED ✅ v2026-01-27-CLUSTER-CUWA-OUTPUT-1");
+console.log("ClusterPage.jsx LOADED ✅ v2026-01-27-RESTORE-ORIGINAL-P1");
 
 const API_BASE =
   (import.meta?.env?.VITE_API_BASE && String(import.meta.env.VITE_API_BASE)) ||
@@ -50,107 +50,86 @@ function normalizeClustersWithCardMap(raw, cardMap) {
   });
 }
 
-/** Try normalize CU/WA output from any backend shape */
-function normalizeCuWa(any) {
-  if (!any) return { ok: false, sessionId: "", appliedAt: "", cus: [] };
+/** Normalize CU/WA output from session.cus shape */
+function normalizeCusFromSession(any, sidFallback = "") {
+  if (!any) return { ok: false, sessionId: sidFallback, appliedAt: "", cus: [] };
 
-  // common wrappers
-  const root =
-    any?.data ??
-    any?.result ??
-    any?.output ??
-    any?.payload ??
-    any;
+  const root = any?.data ?? any?.result ?? any;
 
   const sessionId = String(
-    root?.sessionId ??
-      root?.sid ??
-      any?.sessionId ??
-      any?.sid ??
-      ""
+    root?.sessionId ?? root?.sid ?? any?.sessionId ?? any?.sid ?? sidFallback ?? ""
   ).trim();
 
-  const appliedAt = String(
-    root?.appliedAt ??
-      root?.mergedAt ??
-      root?.generatedAt ??
-      any?.appliedAt ??
-      any?.generatedAt ??
-      ""
-  ).trim();
+  const appliedAt = String(root?.appliedAt ?? root?.mergedAt ?? root?.generatedAt ?? "").trim();
 
-  // where CU list might live
-  const cusRaw =
-    root?.cus ??
-    root?.cu ??
-    root?.cuwa ??
-    root?.cuWa ??
-    root?.cu_wa ??
-    root?.applied ??
-    root?.items ??
-    root?.list ??
-    [];
-
+  // server.js stores at: session.cus
+  const cusRaw = root?.cus ?? root?.items ?? root?.list ?? [];
   const cusArr = Array.isArray(cusRaw) ? cusRaw : [];
 
-  // normalize each CU and WA
   const cus = cusArr.map((cu, i) => {
-    const cuTitle = String(
-      cu?.cuTitle ??
-        cu?.title ??
-        cu?.name ??
-        cu?.cu ??
-        cu?.competencyUnit ??
-        `CU ${i + 1}`
-    ).trim();
+    const cuTitle = String(cu?.cuTitle ?? cu?.title ?? cu?.name ?? `CU ${i + 1}`).trim();
+    const cuNo = String(cu?.cuNo ?? cu?.no ?? cu?.index ?? i + 1).trim();
 
-    const cuNo = String(
-      cu?.cuNo ??
-        cu?.no ??
-        cu?.index ??
-        cu?.cuIndex ??
-        cu?.cuNumber ??
-        i + 1
-    ).trim();
-
-    const waRaw =
-      cu?.was ??
-      cu?.wa ??
-      cu?.workActivities ??
-      cu?.activities ??
-      cu?.items ??
-      [];
-
+    const waRaw = cu?.was ?? cu?.wa ?? cu?.workActivities ?? cu?.activities ?? [];
     const waArr = Array.isArray(waRaw) ? waRaw : [];
 
     const was = waArr.map((wa, j) => {
-      const waTitle = String(
-        wa?.waTitle ??
-          wa?.title ??
-          wa?.name ??
-          wa?.wa ??
-          wa?.activity ??
-          `WA ${j + 1}`
-      ).trim();
-
-      const waNo = String(
-        wa?.waNo ??
-          wa?.no ??
-          wa?.index ??
-          wa?.waIndex ??
-          wa?.waNumber ??
-          j + 1
-      ).trim();
-
+      const waTitle = String(wa?.waTitle ?? wa?.title ?? wa?.name ?? `WA ${j + 1}`).trim();
+      const waNo = String(wa?.waNo ?? wa?.no ?? wa?.index ?? j + 1).trim();
       return { waNo, waTitle };
     });
 
     return { cuNo, cuTitle, was };
   });
 
-  const ok = cus.length > 0;
+  return { ok: cus.length > 0, sessionId, appliedAt, cus };
+}
 
-  return { ok, sessionId, appliedAt, cus };
+/** Normalize MySPIKE compare output (flexible) */
+function normalizeMySpikeCompare(any) {
+  if (!any) return { ok: false, rows: [], summary: "" };
+
+  const root = any?.data ?? any?.result ?? any;
+  const rowsRaw =
+    root?.rows ??
+    root?.items ??
+    root?.comparisons ??
+    root?.list ??
+    root?.results ??
+    [];
+
+  const rowsArr = Array.isArray(rowsRaw) ? rowsRaw : [];
+
+  const rows = rowsArr.map((r) => {
+    const myspikeCU = String(
+      r?.myspikeCU ?? r?.myspikeCu ?? r?.spikeCU ?? r?.spikeCu ?? r?.matchedCuTitle ?? r?.matchTitle ?? ""
+    ).trim();
+
+    const myspikeNossCode = String(
+      r?.myspikeNossCode ?? r?.nossCode ?? r?.code ?? r?.matchedNossCode ?? ""
+    ).trim();
+
+    const score = Number(r?.score ?? r?.bestScore ?? r?.similarity ?? 0) || 0;
+
+    // CU from our side
+    const dacumCU = String(r?.dacumCU ?? r?.dacumCu ?? r?.cuTitle ?? r?.cu ?? r?.iNossCu ?? r?.sourceCu ?? "").trim();
+
+    return {
+      dacumCU,
+      myspikeCU,
+      myspikeNossCode,
+      score,
+      raw: r,
+    };
+  });
+
+  const summaryParts = [];
+  if (typeof root?.indexCount !== "undefined") summaryParts.push(`MySPIKE Index: ${root.indexCount}`);
+  if (typeof root?.found !== "undefined") summaryParts.push(`ADA: ${root.found}`);
+  if (typeof root?.notFound !== "undefined") summaryParts.push(`TIADA: ${root.notFound}`);
+  const summary = summaryParts.join(" | ");
+
+  return { ok: rows.length > 0, rows, summary };
 }
 
 export default function ClusterPage({ initialSessionId = "Masjid", onBack }) {
@@ -163,13 +142,19 @@ export default function ClusterPage({ initialSessionId = "Masjid", onBack }) {
 
   // cluster result
   const [rawResult, setRawResult] = useState(null);
-  const [clusters, setClusters] = useState([]); // editable
+  const [clusters, setClusters] = useState([]); // editable UI
   const [agreed, setAgreed] = useState(false);
 
-  // CU/WA output (hasil Apply)
+  // CU/WA output (hasil Apply / session.cus)
   const [applyInfo, setApplyInfo] = useState(null); // {ok, sessionId, appliedAt, cus}
-  const [applyMsg, setApplyMsg] = useState(""); // "Apply OK..."
+  const [applyMsg, setApplyMsg] = useState("");
   const [cuwaErr, setCuwaErr] = useState("");
+
+  // MySPIKE compare
+  const [compareInfo, setCompareInfo] = useState(null); // {ok, rows, summary}
+  const [compareMsg, setCompareMsg] = useState("");
+  const [compareErr, setCompareErr] = useState("");
+  const [compareLoading, setCompareLoading] = useState(false);
 
   // loading/error
   const [busy, setBusy] = useState(false);
@@ -185,6 +170,9 @@ export default function ClusterPage({ initialSessionId = "Masjid", onBack }) {
     setApplyInfo(null);
     setApplyMsg("");
     setCuwaErr("");
+    setCompareInfo(null);
+    setCompareMsg("");
+    setCompareErr("");
   }, [sessionId]);
 
   async function apiGet(path) {
@@ -326,27 +314,25 @@ export default function ClusterPage({ initialSessionId = "Masjid", onBack }) {
     }
   }
 
-  /** Load CU/WA output after apply (like paparan lama) */
+  /** Load CU/WA output from server.js (session.cus) */
   async function loadCuWaOutput(sid) {
+    const s = String(sid || "").trim();
+    if (!s) return;
+
     setCuwaErr("");
     setApplyInfo(null);
     setApplyMsg("");
 
+    // ✅ PRIORITY (server.js real endpoints)
     const tries = [
-      // paling logik (naming)
-      `/api/cluster/applied/${encodeURIComponent(sid)}`,
-      `/api/cluster/applied?session=${encodeURIComponent(sid)}`,
-      `/api/cluster/applied?sessionId=${encodeURIComponent(sid)}`,
+      `/api/session/cus/${encodeURIComponent(s)}`,
+      `/api/session/cus?sessionId=${encodeURIComponent(s)}`,
 
-      // gaya "cus"
-      `/api/cluster/cus/${encodeURIComponent(sid)}`,
-      `/api/cluster/cus?session=${encodeURIComponent(sid)}`,
-      `/api/cus/${encodeURIComponent(sid)}`,
-      `/api/cus?session=${encodeURIComponent(sid)}`,
-
-      // gaya "apply result"
-      `/api/cluster/apply/result/${encodeURIComponent(sid)}`,
-      `/api/cluster/apply/result?session=${encodeURIComponent(sid)}`,
+      // fallback legacy guesses (keep harmless)
+      `/api/cluster/applied/${encodeURIComponent(s)}`,
+      `/api/cluster/applied?sessionId=${encodeURIComponent(s)}`,
+      `/api/cluster/cus/${encodeURIComponent(s)}`,
+      `/api/cus/${encodeURIComponent(s)}`,
     ];
 
     let out = null;
@@ -369,18 +355,17 @@ export default function ClusterPage({ initialSessionId = "Masjid", onBack }) {
       return;
     }
 
-    const normalized = normalizeCuWa(out);
+    const normalized = normalizeCusFromSession(out, s);
 
     if (!normalized.ok) {
-      setCuwaErr("Output CU/WA kosong (data tidak dijumpai dalam response).");
+      setCuwaErr("Output CU/WA kosong (session.cus belum wujud / tiada data).");
       setApplyInfo(normalized);
       return;
     }
 
     setApplyInfo(normalized);
-    const s = normalized.sessionId || sid;
     const at = normalized.appliedAt ? ` | appliedAt ${normalized.appliedAt}` : "";
-    setApplyMsg(`Apply OK: sessionId ${s} | cusCount ${normalized.cus.length}${at}`);
+    setApplyMsg(`CU/WA OK: sessionId ${normalized.sessionId || s} | cusCount ${normalized.cus.length}${at}`);
   }
 
   async function applyMerge() {
@@ -395,17 +380,19 @@ export default function ClusterPage({ initialSessionId = "Masjid", onBack }) {
     setApplyInfo(null);
     setApplyMsg("");
 
-    const tries = [
-      { path: `/api/cluster/apply/${encodeURIComponent(sid)}`, body: { clusters, source: "manual_edit_before_merge" } },
-      { path: `/api/cluster/apply`, body: { sessionId: sid, clusters, source: "manual_edit_before_merge" } },
-      { path: `/api/cluster/apply`, body: { sid, clusters, source: "manual_edit_before_merge" } },
-      { path: `/api/cluster/apply?session=${encodeURIComponent(sid)}`, body: { clusters, source: "manual_edit_before_merge" } },
-    ];
-
-    let lastErr = "";
-    let out = null;
-
     try {
+      // ✅ PILIHAN 1: server.js kekal — apply hanya perlukan sessionId
+      // (edit clusters di UI tidak digunakan oleh backend dalam fasa ini)
+      const tries = [
+        { path: `/api/cluster/apply/${encodeURIComponent(sid)}`, body: {} },
+        { path: `/api/cluster/apply`, body: { sessionId: sid } },
+        { path: `/api/cluster/apply`, body: { sid } },
+        { path: `/api/cluster/apply?session=${encodeURIComponent(sid)}`, body: {} },
+      ];
+
+      let out = null;
+      let lastErr = "";
+
       for (const t of tries) {
         try {
           console.log("APPLY TRY:", t.path, t.body);
@@ -420,22 +407,12 @@ export default function ClusterPage({ initialSessionId = "Masjid", onBack }) {
 
       if (!out) throw new Error(lastErr || "Apply AI (Merge) gagal: semua endpoint tidak serasi.");
 
-      // Cuba baca CU/WA terus dari response apply (kalau backend pulangkan terus)
-      const direct = normalizeCuWa(out);
-      if (direct.ok) {
-        setApplyInfo(direct);
-        const s = direct.sessionId || sid;
-        const at = direct.appliedAt ? ` | appliedAt ${direct.appliedAt}` : "";
-        setApplyMsg(`Apply OK: sessionId ${s} | cusCount ${direct.cus.length}${at}`);
-      } else {
-        // jika apply response tak ada CU/WA, kita GET output selepas apply
-        await loadCuWaOutput(sid);
-      }
-
       alert("Apply AI (Merge) berjaya. Output CU/WA akan dipaparkan di bawah.");
 
-      // Optional: refresh cluster result supaya UI konsisten
-      // (jangan reset CU/WA)
+      // ✅ ambil CU/WA dari endpoint rasmi server.js
+      await loadCuWaOutput(sid);
+
+      // optional refresh cluster result (UI)
       await loadResult();
     } catch (e) {
       setErr(String(e?.message || e));
@@ -445,7 +422,48 @@ export default function ClusterPage({ initialSessionId = "Masjid", onBack }) {
     }
   }
 
-  // ====== EDIT ACTIONS ======
+  async function runMySpikeComparison() {
+    const sid = String(sessionId || "").trim();
+    if (!sid) return alert("Sila isi Session dulu.");
+
+    setCompareErr("");
+    setCompareMsg("");
+    setCompareInfo(null);
+    setCompareLoading(true);
+
+    try {
+      // pastikan kita ada CU list (kalau belum apply, kita cuba load dari session.cus)
+      let cusPayload = applyInfo?.ok ? applyInfo.cus : null;
+      if (!cusPayload) {
+        // cuba load CU/WA dahulu dari server
+        const tmp = await apiGet(`/api/session/cus/${encodeURIComponent(sid)}`);
+        const norm = normalizeCusFromSession(tmp, sid);
+        if (norm.ok) cusPayload = norm.cus;
+      }
+
+      const body = {
+        sessionId: sid,
+        cus: cusPayload || [],
+      };
+
+      // endpoint rasmi dalam server.js (MySPIKE Comparator)
+      const out = await apiPost(`/api/s2/compare`, body);
+      const norm = normalizeMySpikeCompare(out);
+
+      if (!norm.ok) {
+        throw new Error("Response MySPIKE tidak mengandungi senarai perbandingan untuk dipaparkan.");
+      }
+
+      setCompareInfo(norm);
+      setCompareMsg(norm.summary || `MySPIKE Comparison OK (${norm.rows.length} rows)`);
+    } catch (e) {
+      setCompareErr(String(e?.message || e));
+    } finally {
+      setCompareLoading(false);
+    }
+  }
+
+  // ====== EDIT ACTIONS (UI only for now) ======
   function renameCluster(clusterId, newTitle) {
     setClusters((prev) => prev.map((c) => (c.id === clusterId ? { ...c, title: newTitle } : c)));
     setAgreed(false);
@@ -512,6 +530,7 @@ export default function ClusterPage({ initialSessionId = "Masjid", onBack }) {
         ) : null}
       </div>
 
+      {/* ACTION BAR */}
       <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
         <input
           value={sessionId}
@@ -540,9 +559,18 @@ export default function ClusterPage({ initialSessionId = "Masjid", onBack }) {
           onClick={() => loadCuWaOutput(String(sessionId || "").trim())}
           disabled={busy}
           style={{ height: 36 }}
-          title="Tarik semula output CU/WA selepas Apply"
+          title="Tarik semula output CU/WA dari server (session.cus)"
         >
           Reload CU (cus)
+        </button>
+
+        <button
+          onClick={runMySpikeComparison}
+          disabled={busy || compareLoading}
+          style={{ height: 36 }}
+          title="Run comparator CU terhadap MySPIKE"
+        >
+          {compareLoading ? "Comparing..." : "Run AI Comparison (MySPIKE)"}
         </button>
       </div>
 
@@ -590,6 +618,9 @@ export default function ClusterPage({ initialSessionId = "Masjid", onBack }) {
         <div style={{ marginTop: 8, fontSize: 12, opacity: 0.8 }}>
           Anda boleh: <b>ubah tajuk cluster</b> dan <b>pindahkan aktiviti</b>. Selepas selesai,
           tekan <b>Agreed</b> untuk lock sebelum <b>Apply AI (Merge)</b>.
+          <div style={{ marginTop: 6, opacity: 0.8 }}>
+            <b>Nota (Pilihan 1):</b> Apply akan ikut hasil AI terakhir di server (edit UI belum dipakai oleh backend).
+          </div>
         </div>
       </div>
 
@@ -683,6 +714,59 @@ export default function ClusterPage({ initialSessionId = "Masjid", onBack }) {
               </div>
             </div>
           ))
+        )}
+      </div>
+
+      {/* ===== MySPIKE Comparison ===== */}
+      <div style={{ marginTop: 18, paddingTop: 10, borderTop: "2px solid #eee" }}>
+        <h2 style={{ margin: "8px 0" }}>MySPIKE Comparison</h2>
+
+        {compareMsg ? (
+          <div
+            style={{
+              background: "#eff6ff",
+              border: "1px solid #bfdbfe",
+              padding: "10px 12px",
+              borderRadius: 10,
+              marginBottom: 12,
+              fontSize: 13,
+            }}
+          >
+            <b>{compareMsg}</b>
+          </div>
+        ) : null}
+
+        {compareErr ? <div style={{ color: "#b91c1c", marginBottom: 10 }}>Error: {compareErr}</div> : null}
+
+        {!compareInfo?.ok ? (
+          <div style={{ opacity: 0.8 }}>
+            Tiada comparison lagi. Klik <b>Run AI Comparison (MySPIKE)</b>.
+          </div>
+        ) : (
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr>
+                  <th style={{ textAlign: "left", borderBottom: "1px solid #ddd", padding: 8 }}>CU (iNOSS)</th>
+                  <th style={{ textAlign: "left", borderBottom: "1px solid #ddd", padding: 8 }}>MySPIKE CU</th>
+                  <th style={{ textAlign: "left", borderBottom: "1px solid #ddd", padding: 8 }}>NOSS Code</th>
+                  <th style={{ textAlign: "left", borderBottom: "1px solid #ddd", padding: 8 }}>Score</th>
+                </tr>
+              </thead>
+              <tbody>
+                {compareInfo.rows.map((r, i) => (
+                  <tr key={i}>
+                    <td style={{ borderBottom: "1px solid #f0f0f0", padding: 8 }}>{r.dacumCU || "-"}</td>
+                    <td style={{ borderBottom: "1px solid #f0f0f0", padding: 8 }}>{r.myspikeCU || "-"}</td>
+                    <td style={{ borderBottom: "1px solid #f0f0f0", padding: 8 }}>{r.myspikeNossCode || "-"}</td>
+                    <td style={{ borderBottom: "1px solid #f0f0f0", padding: 8 }}>
+                      {Number.isFinite(r.score) ? r.score.toFixed(4) : "0.0000"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 
