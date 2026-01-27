@@ -5,61 +5,99 @@ const API_BASE =
   "https://dacum-backend.onrender.com";
 
 function normalizeClusterResult(raw) {
-  // Cuba normalize kepada format:
-  // clusters = [{ id, title, items: [{ id, text }] }]
   if (!raw) return [];
 
-  // Jika backend dah bagi array clusters terus
-  const clusters = raw.clusters || raw.result || raw.data || raw;
+  // 1) Dapatkan "container" yang paling munasabah
+  const container =
+    raw.clusters ??
+    raw.result ??
+    raw.data ??
+    raw.output ??
+    raw.payload ??
+    raw;
 
-  if (Array.isArray(clusters)) {
-    // Format kemungkinan:
-    // 1) [{ title, cards:[{id, activity}] }]
-    // 2) [{ name, items:[...] }]
-    // 3) [{ clusterTitle, list:[...] }]
-    return clusters.map((c, idx) => {
+  // Helper: extract text
+  const getText = (x) =>
+    String(
+      x?.activity ??
+        x?.name ??
+        x?.text ??
+        x?.title ??
+        x?.wa ??
+        x?.waTitle ??
+        x?.card ??
+        x ??
+        ""
+    ).trim();
+
+  // Helper: extract list array
+  const pickList = (c) => {
+    return (
+      c?.items ??
+      c?.cards ??
+      c?.list ??
+      c?.activities ??
+      c?.members ??
+      c?.children ??
+      c?.cardsInCluster ??
+      c?.membersCards ??
+      []
+    );
+  };
+
+  // 2) Jika backend bagi array cluster
+  if (Array.isArray(container)) {
+    return container.map((c, idx) => {
       const title = String(
-        c.title || c.name || c.clusterTitle || c.label || `Cluster ${idx + 1}`
-      );
+        c?.title ?? c?.name ?? c?.clusterTitle ?? c?.label ?? `Cluster ${idx + 1}`
+      ).trim();
 
-      const list =
-        c.items ||
-        c.cards ||
-        c.list ||
-        c.activities ||
-        c.members ||
-        c.children ||
-        [];
+      const list = pickList(c);
+      const arr = Array.isArray(list) ? list : [];
 
-      const items = Array.isArray(list)
-        ? list.map((x, j) => ({
-            id: String(x.id ?? x.cardId ?? `${idx}-${j}`),
-            text: String(x.activity || x.name || x.text || x.title || "").trim(),
-          }))
-        : [];
+      const items = arr
+        .map((x, j) => ({
+          id: String(x?.id ?? x?.cardId ?? x?.waId ?? `${idx}-${j}`),
+          text: getText(x),
+        }))
+        .filter((it) => it.text); // buang kosong
 
-      return {
-        id: String(c.id ?? `c${idx + 1}`),
-        title,
-        items,
-      };
+      return { id: String(c?.id ?? `c${idx + 1}`), title, items };
     });
   }
 
-  // Jika backend bagi object { "Nama Cluster": [..] }
-  if (clusters && typeof clusters === "object") {
-    return Object.entries(clusters).map(([k, arr], idx) => ({
-      id: `c${idx + 1}`,
-      title: String(k),
-      items: (Array.isArray(arr) ? arr : []).map((x, j) => ({
-        id: String(x.id ?? `${idx}-${j}`),
-        text: String(x.activity || x.name || x.text || x.title || x).trim(),
-      })),
-    }));
+  // 3) Jika backend bagi object map { "Cluster": [...] }
+  if (container && typeof container === "object") {
+    // special: kadang backend simpan dalam raw.groups atau raw.clusterMap
+    const obj =
+      container.groups ??
+      container.clusterMap ??
+      container.map ??
+      container;
+
+    if (obj && typeof obj === "object" && !Array.isArray(obj)) {
+      const entries = Object.entries(obj);
+
+      // jika entries kelihatan macam {generatedAt, sessionId} — skip metadata
+      const useful = entries.filter(([k, v]) => Array.isArray(v));
+      if (useful.length) {
+        return useful.map(([k, arr], idx) => ({
+          id: `c${idx + 1}`,
+          title: String(k).trim(),
+          items: (Array.isArray(arr) ? arr : [])
+            .map((x, j) => ({
+              id: String(x?.id ?? x?.cardId ?? x?.waId ?? `${idx}-${j}`),
+              text: getText(x),
+            }))
+            .filter((it) => it.text),
+        }));
+      }
+    }
   }
 
   return [];
 }
+
 
 export default function ClusterPage({ initialSessionId = "Masjid", onBack }) {
   const apiBase = useMemo(() => {
