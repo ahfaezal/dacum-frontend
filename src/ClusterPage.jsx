@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useState } from "react";
-console.log("ClusterPage.jsx LOADED ✅ v2026-01-27-CLUSTER-FALLBACK-1");
 
 const API_BASE =
   (import.meta?.env?.VITE_API_BASE && String(import.meta.env.VITE_API_BASE)) ||
@@ -8,7 +7,6 @@ const API_BASE =
 function normalizeClusterResult(raw) {
   if (!raw) return [];
 
-  // 1) Dapatkan "container" yang paling munasabah
   const container =
     raw.clusters ??
     raw.result ??
@@ -17,7 +15,6 @@ function normalizeClusterResult(raw) {
     raw.payload ??
     raw;
 
-  // Helper: extract text
   const getText = (x) =>
     String(
       x?.activity ??
@@ -31,26 +28,26 @@ function normalizeClusterResult(raw) {
         ""
     ).trim();
 
-  // Helper: extract list array
-  const pickList = (c) => {
-    return (
-      c?.items ??
-      c?.cards ??
-      c?.list ??
-      c?.activities ??
-      c?.members ??
-      c?.children ??
-      c?.cardsInCluster ??
-      c?.membersCards ??
-      []
-    );
-  };
+  const pickList = (c) =>
+    c?.items ??
+    c?.cards ??
+    c?.list ??
+    c?.activities ??
+    c?.members ??
+    c?.children ??
+    c?.cardsInCluster ??
+    c?.membersCards ??
+    [];
 
   // 2) Jika backend bagi array cluster
   if (Array.isArray(container)) {
     return container.map((c, idx) => {
       const title = String(
-        c?.title ?? c?.name ?? c?.clusterTitle ?? c?.label ?? `Cluster ${idx + 1}`
+        c?.title ??
+          c?.name ??
+          c?.clusterTitle ??
+          c?.label ??
+          `Cluster ${idx + 1}`
       ).trim();
 
       const list = pickList(c);
@@ -61,7 +58,7 @@ function normalizeClusterResult(raw) {
           id: String(x?.id ?? x?.cardId ?? x?.waId ?? `${idx}-${j}`),
           text: getText(x),
         }))
-        .filter((it) => it.text); // buang kosong
+        .filter((it) => it.text);
 
       return { id: String(c?.id ?? `c${idx + 1}`), title, items };
     });
@@ -69,18 +66,12 @@ function normalizeClusterResult(raw) {
 
   // 3) Jika backend bagi object map { "Cluster": [...] }
   if (container && typeof container === "object") {
-    // special: kadang backend simpan dalam raw.groups atau raw.clusterMap
     const obj =
-      container.groups ??
-      container.clusterMap ??
-      container.map ??
-      container;
+      container.groups ?? container.clusterMap ?? container.map ?? container;
 
     if (obj && typeof obj === "object" && !Array.isArray(obj)) {
       const entries = Object.entries(obj);
-
-      // jika entries kelihatan macam {generatedAt, sessionId} — skip metadata
-      const useful = entries.filter(([k, v]) => Array.isArray(v));
+      const useful = entries.filter(([, v]) => Array.isArray(v));
       if (useful.length) {
         return useful.map(([k, arr], idx) => ({
           id: `c${idx + 1}`,
@@ -98,7 +89,6 @@ function normalizeClusterResult(raw) {
 
   return [];
 }
-
 
 export default function ClusterPage({ initialSessionId = "Masjid", onBack }) {
   const apiBase = useMemo(() => {
@@ -122,6 +112,10 @@ export default function ClusterPage({ initialSessionId = "Masjid", onBack }) {
   const [aiLoading, setAiLoading] = useState(false);
   const [err, setErr] = useState("");
 
+  useEffect(() => {
+    console.log("ClusterPage.jsx LOADED ✅ v2026-01-27-CLUSTER-FALLBACK-2");
+  }, []);
+
   // bila session berubah -> reset state
   useEffect(() => {
     setRawResult(null);
@@ -132,7 +126,14 @@ export default function ClusterPage({ initialSessionId = "Masjid", onBack }) {
 
   async function apiGet(path) {
     const res = await fetch(`${apiBase}${path}`);
-    const json = await res.json().catch(() => ({}));
+    const text = await res.text().catch(() => "");
+    let json = {};
+    try {
+      json = text ? JSON.parse(text) : {};
+    } catch {
+      // kalau bukan JSON, simpan sebagai raw
+      json = { raw: text };
+    }
     if (!res.ok) throw new Error(json?.error || `GET ${path} -> ${res.status}`);
     return json;
   }
@@ -143,111 +144,127 @@ export default function ClusterPage({ initialSessionId = "Masjid", onBack }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body || {}),
     });
-    const json = await res.json().catch(() => ({}));
+
+    const text = await res.text().catch(() => "");
+    let json = {};
+    try {
+      json = text ? JSON.parse(text) : {};
+    } catch {
+      json = { raw: text };
+    }
+
     if (!res.ok) throw new Error(json?.error || `POST ${path} -> ${res.status}`);
     return json;
   }
 
-async function loadResult() {
-  const sid = String(sessionId || "").trim();
-  if (!sid) return;
+  async function loadResult() {
+    const sid = String(sessionId || "").trim();
+    if (!sid) return;
 
-  setErr("");
+    setErr("");
 
-  const tries = [
-    // A) lama: /api/cluster/result/:sid
-    `/api/cluster/result/${encodeURIComponent(sid)}`,
+    const tries = [
+      `/api/cluster/result/${encodeURIComponent(sid)}`,
+      `/api/cluster/result?session=${encodeURIComponent(sid)}`,
+      `/api/cluster/result?sessionId=${encodeURIComponent(sid)}`,
+      `/api/cluster/result?sid=${encodeURIComponent(sid)}`,
+    ];
 
-    // B) query: /api/cluster/result?session=sid
-    `/api/cluster/result?session=${encodeURIComponent(sid)}`,
+    try {
+      let out = null;
+      let last = "";
 
-    // C) query alt: /api/cluster/result?sessionId=sid
-    `/api/cluster/result?sessionId=${encodeURIComponent(sid)}`,
-
-    // D) query alt: /api/cluster/result?sid=sid
-    `/api/cluster/result?sid=${encodeURIComponent(sid)}`,
-  ];
-
-  try {
-    let out = null;
-    let last = "";
-
-    for (const path of tries) {
-      try {
-        console.log("LOAD RESULT TRY:", path);
-        out = await apiGet(path);
-        console.log("LOAD RESULT OK:", path, out);
-        break;
-      } catch (e) {
-        last = String(e?.message || e);
-        console.warn("LOAD RESULT FAIL:", path, last);
+      for (const p of tries) {
+        try {
+          console.log("LOAD RESULT TRY:", p);
+          out = await apiGet(p);
+          console.log("LOAD RESULT OK:", p, out);
+          break;
+        } catch (e) {
+          last = String(e?.message || e);
+          console.warn("LOAD RESULT FAIL:", p, last);
+        }
       }
+
+      if (!out)
+        throw new Error(
+          last || "Gagal load cluster result (tiada endpoint yang serasi)."
+        );
+
+      setRawResult(out);
+      setClusters(normalizeClusterResult(out));
+      setAgreed(false);
+    } catch (e) {
+      setErr(String(e?.message || e));
     }
-
-    if (!out) throw new Error(last || "Gagal load cluster result (tiada endpoint yang serasi).");
-
-    setRawResult(out);
-
-    // jika backend pulangkan clusters terus dalam out
-    const normalized = normalizeClusterResult(out);
-    setClusters(normalized);
-    setAgreed(false);
-  } catch (e) {
-    setErr(String(e?.message || e));
   }
-}
 
-async function runClustering() {
-  const sid = String(sessionId || "").trim();
-  if (!sid) return alert("Sila isi Session dulu.");
+  async function runClustering() {
+    const sid = String(sessionId || "").trim();
+    if (!sid) return alert("Sila isi Session dulu.");
 
-  setBusy(true);
-  setAiLoading(true);
-  setErr("");
+    setBusy(true);
+    setAiLoading(true);
+    setErr("");
 
-  console.log("RUN CLUSTER clicked, sid =", sid);
+    console.log("RUN CLUSTER clicked, sid =", sid);
 
-  const tries = [
-    // A) (yang sekarang 404)
-    { path: `/api/cluster/run/${encodeURIComponent(sid)}`, body: {} },
+    const tries = [
+      // A) (kadang 404)
+      { path: `/api/cluster/run/${encodeURIComponent(sid)}`, body: {} },
 
-    // B) body sessionId
-    { path: `/api/cluster/run`, body: { sessionId: sid } },
+      // B) body sessionId (ini nampaknya betul untuk backend anda)
+      { path: `/api/cluster/run`, body: { sessionId: sid } },
 
-    // C) body sid (kadang backend guna sid)
-    { path: `/api/cluster/run`, body: { sid } },
+      // C) body sid
+      { path: `/api/cluster/run`, body: { sid } },
 
-    // D) query (kadang backend guna ?session=)
-    { path: `/api/cluster/run?session=${encodeURIComponent(sid)}`, body: {} },
-  ];
+      // D) query session
+      { path: `/api/cluster/run?session=${encodeURIComponent(sid)}`, body: {} },
+    ];
 
-  let lastErr = "";
+    let lastErr = "";
 
-  try {
-    for (const t of tries) {
-      try {
-        console.log("TRY:", t.path, t.body);
-        await apiPost(t.path, t.body);
-        console.log("SUCCESS:", t.path);
-        await loadResult();
-        return;
-      } catch (e) {
-        lastErr = String(e?.message || e);
-        console.warn("FAIL:", t.path, lastErr);
-        // terus cuba next
+    try {
+      for (const t of tries) {
+        try {
+          console.log("TRY:", t.path, t.body);
+
+          // ✅ ambil response
+          const out = await apiPost(t.path, t.body);
+
+          console.log("SUCCESS:", t.path, out);
+
+          // ✅ jika backend pulangkan result terus dalam response
+          const normalized = normalizeClusterResult(out);
+          if (normalized.length) {
+            setRawResult(out);
+            setClusters(normalized);
+            setAgreed(false);
+          } else {
+            // ✅ fallback: backend hanya run & simpan result
+            await loadResult();
+          }
+
+          return;
+        } catch (e) {
+          lastErr = String(e?.message || e);
+          console.warn("FAIL:", t.path, lastErr);
+        }
       }
-    }
 
-    // jika semua gagal
-    throw new Error(lastErr || "Run AI (Clustering) gagal: semua endpoint tidak serasi.");
-  } catch (e) {
-    setErr(String(e?.message || e));
-    alert(String(e?.message || e));
-  } finally {
-    setBusy(false);
-    setAiLoading(false);
+      throw new Error(
+        lastErr ||
+          "Run AI (Clustering) gagal: semua endpoint tidak serasi."
+      );
+    } catch (e) {
+      setErr(String(e?.message || e));
+      alert(String(e?.message || e));
+    } finally {
+      setBusy(false);
+      setAiLoading(false);
+    }
   }
-}
 
   async function applyMerge() {
     const sid = String(sessionId || "").trim();
@@ -262,9 +279,6 @@ async function runClustering() {
     setBusy(true);
     setErr("");
     try {
-      // ✅ Penting: hantar hasil edit ke backend supaya merge ikut edit user
-      // Anda perlukan backend endpoint yang menerima payload clustering.
-      // Saya guna /api/cluster/apply/:sessionId (ubah jika berbeza).
       await apiPost(`/api/cluster/apply/${encodeURIComponent(sid)}`, {
         clusters,
         source: "manual_edit_before_merge",
@@ -326,7 +340,6 @@ async function runClustering() {
       return;
     }
 
-    // optional: validate tajuk cluster tak kosong
     const hasEmptyTitle = clusters.some((c) => !String(c.title || "").trim());
     if (hasEmptyTitle) {
       alert("Sila pastikan semua tajuk cluster diisi sebelum Agreed.");
@@ -336,7 +349,7 @@ async function runClustering() {
     setAgreed(true);
   }
 
-  // load last result on mount (optional)
+  // load last result on mount
   useEffect(() => {
     loadResult();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -358,10 +371,13 @@ async function runClustering() {
         <input
           value={sessionId}
           onChange={(e) => setSessionId(e.target.value)}
-          style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #ccc" }}
+          style={{
+            padding: "8px 10px",
+            borderRadius: 10,
+            border: "1px solid #ccc",
+          }}
         />
 
-        {/* 1) Rename button */}
         <button
           onClick={runClustering}
           disabled={busy || aiLoading}
@@ -384,7 +400,6 @@ async function runClustering() {
         </button>
       </div>
 
-      {/* status */}
       <div style={{ marginTop: 10, fontSize: 13, opacity: 0.85 }}>
         Session: <b>{String(sessionId || "")}</b>{" "}
         {agreed ? (
@@ -399,12 +414,9 @@ async function runClustering() {
       </div>
 
       {err ? (
-        <div style={{ marginTop: 10, color: "#b91c1c" }}>
-          Error: {err}
-        </div>
+        <div style={{ marginTop: 10, color: "#b91c1c" }}>Error: {err}</div>
       ) : null}
 
-      {/* 2) ruang edit sebelum merge */}
       <div
         style={{
           marginTop: 16,
@@ -413,14 +425,15 @@ async function runClustering() {
           borderRadius: 14,
         }}
       >
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+        <div
+          style={{ display: "flex", justifyContent: "space-between", gap: 10 }}
+        >
           <div style={{ fontWeight: 800 }}>Edit Clustering (sebelum Merge)</div>
           <div style={{ display: "flex", gap: 10 }}>
             <button onClick={addCluster} disabled={busy} style={{ height: 32 }}>
               + Add Cluster
             </button>
 
-            {/* 3) Agreed gate */}
             <button
               onClick={doAgreed}
               disabled={busy || !clusters.length}
@@ -443,11 +456,11 @@ async function runClustering() {
 
         <div style={{ marginTop: 8, fontSize: 12, opacity: 0.8 }}>
           Anda boleh: <b>ubah tajuk cluster</b> dan <b>pindahkan aktiviti</b>.
-          Selepas selesai, tekan <b>Agreed</b> untuk lock sebelum <b>Apply AI (Merge)</b>.
+          Selepas selesai, tekan <b>Agreed</b> untuk lock sebelum{" "}
+          <b>Apply AI (Merge)</b>.
         </div>
       </div>
 
-      {/* paparan cluster list */}
       <div style={{ marginTop: 14 }}>
         {clusters.length === 0 ? (
           <div style={{ opacity: 0.8 }}>
@@ -476,7 +489,7 @@ async function runClustering() {
                 <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
                   <input
                     value={c.title}
-                    disabled={agreed} // bila agreed, lock edit
+                    disabled={agreed}
                     onChange={(e) => renameCluster(c.id, e.target.value)}
                     style={{
                       padding: "8px 10px",
@@ -555,7 +568,6 @@ async function runClustering() {
         )}
       </div>
 
-      {/* debug info kecil */}
       {rawResult?.generatedAt ? (
         <div style={{ marginTop: 10, fontSize: 12, opacity: 0.75 }}>
           generatedAt: {String(rawResult.generatedAt)}
