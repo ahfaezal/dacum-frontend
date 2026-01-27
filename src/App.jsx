@@ -1,14 +1,17 @@
 import React, { useEffect, useState } from "react";
+import Home from "./pages/Home.jsx";
 import ClusterPage from "./ClusterPage.jsx";
 import LiveBoard from "./LiveBoard.jsx";
 import PanelPage from "./PanelPage.jsx";
 import System2CuEntry from "./pages/System2CuEntry";
 import System2Compare from "./pages/System2Compare";
+import WimPage from "./pages/WimPage.jsx";
+import SoalanPage from "./pages/SoalanPage.jsx";
 
 function parseHash() {
-  const h = String(window.location.hash || "#/board");
+  const h = String(window.location.hash || "#/"); // default ke Home
   const [pathPart, qs] = h.replace(/^#/, "").split("?");
-  const path = pathPart || "/board";
+  const path = pathPart || "/"; // "/" = Home
   const params = new URLSearchParams(qs || "");
   return { path, params };
 }
@@ -24,15 +27,12 @@ class ErrorBoundary extends React.Component {
   }
   componentDidCatch(err, info) {
     this.setState({ info });
-    // log untuk console juga
     console.error("UI crashed:", err, info);
   }
   render() {
     if (this.state.err) {
       const msg =
-        this.state.err?.message ||
-        String(this.state.err) ||
-        "Unknown error";
+        this.state.err?.message || String(this.state.err) || "Unknown error";
       return (
         <div style={{ padding: 20, fontFamily: "system-ui" }}>
           <h2 style={{ marginTop: 0, color: "#b00020" }}>
@@ -51,7 +51,8 @@ class ErrorBoundary extends React.Component {
             </div>
           </details>
           <div style={{ marginTop: 14, opacity: 0.85 }}>
-            Tip: buka Console dan copy “Message” di atas, kemudian paste dekat sini.
+            Tip: buka Console dan copy “Message” di atas, kemudian paste dekat
+            sini.
           </div>
         </div>
       );
@@ -67,13 +68,18 @@ export default function App() {
     const onChange = () => setRoute(parseHash());
     window.addEventListener("hashchange", onChange);
 
-    if (!window.location.hash) window.location.hash = "#/board";
+    // ✅ Default: bila buka domain tanpa hash, pergi Home
+    if (!window.location.hash) window.location.hash = "#/";
 
     return () => window.removeEventListener("hashchange", onChange);
   }, []);
 
+  // ✅ helper navigasi kekal (guna hash)
+  const goHome = () => (window.location.hash = "#/");
   const goBoard = () => (window.location.hash = "#/board");
   const goPanel = () => (window.location.hash = "#/panel");
+  const goWim = () => (window.location.hash = "#/wim");
+  const goSoalan = () => (window.location.hash = "#/soalan");
   const goCluster = (sessionId) =>
     (window.location.hash = `#/cluster?session=${encodeURIComponent(
       sessionId || ""
@@ -81,7 +87,18 @@ export default function App() {
 
   let view = null;
 
-  if (path === "/panel") {
+  // ✅ Frontpage iNOSS
+  if (path === "/") {
+    view = <Home />;
+  }
+  // ✅ Route tambahan (placeholder)
+  else if (path === "/wim") {
+    view = <WimPage onBack={goHome} />;
+  } else if (path === "/soalan") {
+    view = <SoalanPage onBack={goHome} />;
+  }
+  // ✅ Route sedia ada
+  else if (path === "/panel") {
     view = <PanelPage />;
   } else if (path === "/cluster") {
     const sid = params.get("session") || "Masjid";
@@ -91,6 +108,7 @@ export default function App() {
   } else if (path === "/s2/compare") {
     view = <System2Compare />;
   } else {
+    // default masih LiveBoard
     view = <LiveBoard onAgreed={(sid) => goCluster(sid)} goPanel={goPanel} />;
   }
 
