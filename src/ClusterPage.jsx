@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+console.log("ClusterPage.jsx LOADED ✅ v2026-01-27-CLUSTER-FALLBACK-1");
 
 const API_BASE =
   (import.meta?.env?.VITE_API_BASE && String(import.meta.env.VITE_API_BASE)) ||
