@@ -85,13 +85,11 @@ function normalizeCusFromSession(any, sidFallback = "") {
   return { ok: cus.length > 0, sessionId, appliedAt, cus };
 }
 
-/** Normalize MySPIKE compare output (flexible) */
 function normalizeMySpikeCompare(any) {
   if (!any) return { ok: false, rows: [], summary: "" };
 
   const root = any?.data ?? any?.result ?? any;
 
-  // cari list rows di pelbagai lokasi
   const rowsRaw =
     root?.rows ??
     root?.items ??
@@ -99,51 +97,47 @@ function normalizeMySpikeCompare(any) {
     root?.list ??
     root?.results ??
     root?.output ??
+    root?.data ??
     [];
 
   const rowsArr = Array.isArray(rowsRaw) ? rowsRaw : [];
 
   const rows = rowsArr.map((r) => {
-    // CU title (ikut nama2 yang biasa muncul)
     const cuTitle = String(
       r?.cuTitle ??
-      r?.cu ??
-      r?.iNossCU ??
-      r?.iNossCu ??
-      r?.sourceCu ??
-      r?.dacumCU ??
-      r?.title ??
-      ""
+        r?.cu ??
+        r?.iNossCU ??
+        r?.iNossCu ??
+        r?.sourceCu ??
+        r?.dacumCU ??
+        r?.title ??
+        ""
     ).trim();
 
-    // status (ADA/TIADA)
     const status = String(r?.status ?? r?.matchStatus ?? "").trim() || "TIADA";
 
-    // bestScore (ikut nama2 biasa)
     const bestScore = Number(
       r?.bestScore ??
-      r?.score ??
-      r?.similarity ??
-      r?.best ??
-      0
+        r?.score ??
+        r?.similarity ??
+        r?.best ??
+        0
     ) || 0;
 
-    // Top match (format lama: "CODE — TITLE (score x)")
     const topMySpikeMatch = String(
       r?.topMySpikeMatch ??
-      r?.topMatch ??
-      r?.top ??
-      r?.match ??
-      r?.myspike ??
-      r?.myspikeMatch ??
-      r?.topMySpike ??
-      ""
+        r?.topMatch ??
+        r?.top ??
+        r?.match ??
+        r?.myspike ??
+        r?.myspikeMatch ??
+        r?.topMySpike ??
+        ""
     ).trim();
 
     return { cuTitle, status, bestScore, topMySpikeMatch };
   });
 
-  // summary (format lama)
   const indexCount = root?.myspikeIndex ?? root?.indexCount ?? root?.totalIndex;
   const ada = root?.ada ?? root?.found ?? root?.matchCount;
   const tiada = root?.tiada ?? root?.notFound ?? root?.missCount;
@@ -153,7 +147,9 @@ function normalizeMySpikeCompare(any) {
   if (typeof ada !== "undefined") summaryParts.push(`ADA: ${ada}`);
   if (typeof tiada !== "undefined") summaryParts.push(`TIADA: ${tiada}`);
 
-  return { ok: rows.length > 0, rows, summary: summaryParts.join(" | ") };
+  const summary = summaryParts.join(" | ");
+
+  return { ok: rows.length > 0, rows, summary };
 }
 
   // summary (ikut backend lama)
