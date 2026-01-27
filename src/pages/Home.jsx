@@ -1,4 +1,5 @@
 import FeatureCard from "../components/FeatureCard";
+import pfhLogo from "../assets/pfh-logo.png";
 
 export default function Home() {
   const go = (hashPath) => {
@@ -8,7 +9,10 @@ export default function Home() {
   return (
     <div style={styles.wrapper}>
       <div style={styles.left}>
-        <div style={styles.badge}>Powered by PFH Digital 2026</div>
+        <div style={styles.brand}>
+          <img src={pfhLogo} alt="PFH Logo" style={styles.logo} />
+          <div style={styles.badge}>Powered by PFH Digital 2026</div>
+        </div>
 
         <h1 style={styles.title}>Crafting Digital Excellence</h1>
         <hr style={styles.line} />
