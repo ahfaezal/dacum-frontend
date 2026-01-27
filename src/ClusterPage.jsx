@@ -1,365 +1,461 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 
 const API_BASE =
   (import.meta?.env?.VITE_API_BASE && String(import.meta.env.VITE_API_BASE)) ||
   "https://dacum-backend.onrender.com";
 
-export default function ClusterPage() {
-  const [sessionId, setSessionId] = useState("");
+function normalizeClusterResult(raw) {
+  // Cuba normalize kepada format:
+  // clusters = [{ id, title, items: [{ id, text }] }]
+  if (!raw) return [];
 
-  // cards
-  const [cardsItems, setCardsItems] = useState([]);
+  // Jika backend dah bagi array clusters terus
+  const clusters = raw.clusters || raw.result || raw.data || raw;
 
-  // cluster result
-  const [clusterRes, setClusterRes] = useState(null);
-  const [clusterLoading, setClusterLoading] = useState(false);
-  const [clusterErr, setClusterErr] = useState("");
+  if (Array.isArray(clusters)) {
+    // Format kemungkinan:
+    // 1) [{ title, cards:[{id, activity}] }]
+    // 2) [{ name, items:[...] }]
+    // 3) [{ clusterTitle, list:[...] }]
+    return clusters.map((c, idx) => {
+      const title = String(
+        c.title || c.name || c.clusterTitle || c.label || `Cluster ${idx + 1}`
+      );
 
-  // apply result
-  const [applyLoading, setApplyLoading] = useState(false);
-  const [applyErr, setApplyErr] = useState("");
-  const [applyRes, setApplyRes] = useState(null);
+      const list =
+        c.items ||
+        c.cards ||
+        c.list ||
+        c.activities ||
+        c.members ||
+        c.children ||
+        [];
 
-  // cus in session
-  const [cusRes, setCusRes] = useState(null);
-  const [cusLoading, setCusLoading] = useState(false);
-  const [cusErr, setCusErr] = useState("");
+      const items = Array.isArray(list)
+        ? list.map((x, j) => ({
+            id: String(x.id ?? x.cardId ?? `${idx}-${j}`),
+            text: String(x.activity || x.name || x.text || x.title || "").trim(),
+          }))
+        : [];
 
-  // MySPIKE compare
-  const [compareLoading, setCompareLoading] = useState(false);
-  const [compareErr, setCompareErr] = useState("");
-  const [compareRes, setCompareRes] = useState(null);
+      return {
+        id: String(c.id ?? `c${idx + 1}`),
+        title,
+        items,
+      };
+    });
+  }
+
+  // Jika backend bagi object { "Nama Cluster": [..] }
+  if (clusters && typeof clusters === "object") {
+    return Object.entries(clusters).map(([k, arr], idx) => ({
+      id: `c${idx + 1}`,
+      title: String(k),
+      items: (Array.isArray(arr) ? arr : []).map((x, j) => ({
+        id: String(x.id ?? `${idx}-${j}`),
+        text: String(x.activity || x.name || x.text || x.title || x).trim(),
+      })),
+    }));
+  }
+
+  return [];
+}
+
+export default function ClusterPage({ initialSessionId = "Masjid", onBack }) {
+  const apiBase = useMemo(() => {
+    const v = String(API_BASE || "").trim();
+    return v ? v.replace(/\/+$/, "") : "https://dacum-backend.onrender.com";
+  }, []);
+
+  const [sessionId, setSessionId] = useState(initialSessionId);
+
+  // data asal dari backend (untuk reference)
+  const [rawResult, setRawResult] = useState(null);
+
+  // data boleh edit (in-memory)
+  const [clusters, setClusters] = useState([]); // editable
+
+  // gating
+  const [agreed, setAgreed] = useState(false);
+
+  // loading/error
+  const [busy, setBusy] = useState(false);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [err, setErr] = useState("");
+
+  // bila session berubah -> reset state
+  useEffect(() => {
+    setRawResult(null);
+    setClusters([]);
+    setAgreed(false);
+    setErr("");
+  }, [sessionId]);
 
   async function apiGet(path) {
-    const res = await fetch(`${API_BASE}${path}`);
+    const res = await fetch(`${apiBase}${path}`);
     const json = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      throw new Error(json?.error || json?.message || `GET ${path} -> ${res.status}`);
-    }
+    if (!res.ok) throw new Error(json?.error || `GET ${path} -> ${res.status}`);
     return json;
   }
 
   async function apiPost(path, body) {
-    const res = await fetch(`${API_BASE}${path}`, {
+    const res = await fetch(`${apiBase}${path}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body || {}),
     });
     const json = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      throw new Error(json?.error || json?.message || `POST ${path} -> ${res.status}`);
-    }
+    if (!res.ok) throw new Error(json?.error || `POST ${path} -> ${res.status}`);
     return json;
   }
 
-  function sidClean() {
+  async function loadResult() {
     const sid = String(sessionId || "").trim();
-    if (!sid) throw new Error("Sila isi sessionId dahulu (cth: Masjid).");
-    return sid;
-  }
+    if (!sid) return;
 
-  async function loadCards(sid) {
-    // backend compat: /api/cards/:sessionId mungkin return {ok, items} atau array
-    const cardsRes = await apiGet(`/api/cards/${encodeURIComponent(sid)}`);
-    const items = Array.isArray(cardsRes?.items) ? cardsRes.items : Array.isArray(cardsRes) ? cardsRes : [];
-    setCardsItems(items);
-    return items;
-  }
-
-  async function loadClusterResult(sid) {
-    const data = await apiGet(`/api/cluster/result/${encodeURIComponent(sid)}`);
-    setClusterRes(data);
-    return data;
-  }
-
-  async function runCluster() {
-    setClusterLoading(true);
-    setClusterErr("");
-    setClusterRes(null);
-    setApplyRes(null);
+    setErr("");
     try {
-      const sid = sidClean();
-
-      // pastikan cards siap load supaya UI boleh paparkan WA bawah clusters
-      await loadCards(sid);
-
-      // run OpenAI cluster
-      await apiPost("/api/cluster/run", { sessionId: sid });
-
-      // ambil result
-      await loadClusterResult(sid);
+      // ✅ Endpoint biasa kita guna: /api/cluster/result/:sessionId
+      const out = await apiGet(`/api/cluster/result/${encodeURIComponent(sid)}`);
+      setRawResult(out);
+      const normalized = normalizeClusterResult(out);
+      setClusters(normalized);
+      setAgreed(false); // bila load result baru, perlu agreed semula
     } catch (e) {
-      setClusterErr(String(e?.message || e));
-    } finally {
-      setClusterLoading(false);
+      setErr(String(e?.message || e));
     }
   }
 
-  async function applyCluster() {
-    setApplyLoading(true);
-    setApplyErr("");
-    setApplyRes(null);
-    try {
-      const sid = sidClean();
-      const out = await apiPost("/api/cluster/apply", { sessionId: sid });
-      setApplyRes(out);
+  async function runClustering() {
+    const sid = String(sessionId || "").trim();
+    if (!sid) return alert("Sila isi Session dulu.");
 
-      // reload cus
-      await loadCus(sid);
+    setBusy(true);
+    setAiLoading(true); // ✅ mula loading
+    setErr("");
+
+    try {
+      await apiPost(`/api/cluster/run/${encodeURIComponent(sid)}`, {});
+      await loadResult();
     } catch (e) {
-      setApplyErr(String(e?.message || e));
+      setErr(String(e?.message || e));
+      alert(String(e?.message || e));
     } finally {
-      setApplyLoading(false);
+      setBusy(false);
+      setAiLoading(false); // ✅ tamat loading
     }
   }
 
-  async function loadCus(sidParam) {
-    setCusLoading(true);
-    setCusErr("");
-    setCusRes(null);
+  async function applyMerge() {
+    const sid = String(sessionId || "").trim();
+    if (!sid) return alert("Sila isi Session dulu.");
+
+    if (!agreed) {
+      return alert(
+        "Sila tekan 'Agreed' dahulu selepas anda selesai edit clustering."
+      );
+    }
+
+    setBusy(true);
+    setErr("");
     try {
-      const sid = sidParam || sidClean();
-      const data = await apiGet(`/api/session/cus/${encodeURIComponent(sid)}`);
-      setCusRes(data);
-      return data;
-    } catch (e) {
-      setCusErr(String(e?.message || e));
-    } finally {
-      setCusLoading(false);
-    }
-  }
-
-  async function ensureMyspikeIndex() {
-    const st = await apiGet("/api/myspike/index/status");
-    const total = Number(st?.meta?.totalCU || 0);
-    if (!total) {
-      await apiPost("/api/myspike/index/build", { fromPage: 1, toPage: 1 });
-    }
-  }
-
-  function buildCusFromClusterAndCards(clusterResult, items) {
-    const cardsMap = new Map((Array.isArray(items) ? items : []).map((c) => [c.id, c]));
-    const clusters = Array.isArray(clusterResult?.clusters) ? clusterResult.clusters : [];
-
-    return clusters
-      .map((cl, idx) => {
-        const cuTitle = String(cl?.suggestedCU?.title || cl?.title || "").trim() || `CU ${idx + 1}`;
-        const cardIds = Array.isArray(cl?.cardIds) ? cl.cardIds : [];
-        const activities = cardIds
-          .map((id) => cardsMap.get(id))
-          .filter(Boolean)
-          .map((c) => ({ waTitle: String(c.activity || c.name || c.title || "").trim() }))
-          .filter((a) => a.waTitle);
-
-        return { cuCode: "", cuTitle, activities };
-      })
-      .filter((x) => x.cuTitle && x.activities?.length);
-  }
-
-  async function runMySpikeCompare() {
-    setCompareLoading(true);
-    setCompareErr("");
-    setCompareRes(null);
-    try {
-      const sid = sidClean();
-
-      // 1) pastikan index MySPIKE ada
-      await ensureMyspikeIndex();
-
-      // 2) cards (guna return items terus supaya tak kena state async)
-      const items = await loadCards(sid);
-
-      // 3) cluster result: cuba get; kalau 404, minta user run cluster dulu (lebih jelas)
-      let cr;
-      try {
-        cr = await loadClusterResult(sid);
-      } catch (e) {
-        // kalau tiada cluster result, kita bagi arahan jelas
-        throw new Error("Tiada cluster result. Klik 'Run AI Cluster (OpenAI)' dahulu.");
-      }
-
-      // 4) bina cus untuk compare
-      const cus = buildCusFromClusterAndCards(cr, items);
-      if (!cus.length) {
-        throw new Error("Tiada CU untuk dibandingkan. Pastikan clusters ada cardIds & cards ada teks.");
-      }
-
-      // 5) compare
-      const out = await apiPost("/api/s2/compare", {
-        sessionId: sid,
-        meta: { sessionId: sid, source: "inoss-ui" },
-        cus,
-        options: { thresholdAda: 0.78, topK: 5 },
+      // ✅ Penting: hantar hasil edit ke backend supaya merge ikut edit user
+      // Anda perlukan backend endpoint yang menerima payload clustering.
+      // Saya guna /api/cluster/apply/:sessionId (ubah jika berbeza).
+      await apiPost(`/api/cluster/apply/${encodeURIComponent(sid)}`, {
+        clusters,
+        source: "manual_edit_before_merge",
       });
 
-      setCompareRes(out);
+      alert("Apply AI (Merge) berjaya. Sila semak output seterusnya.");
     } catch (e) {
-      setCompareErr(String(e?.message || e));
+      setErr(String(e?.message || e));
+      alert(String(e?.message || e));
     } finally {
-      setCompareLoading(false);
+      setBusy(false);
     }
   }
 
-  const compareRows = useMemo(() => {
-    return Array.isArray(compareRes?.results) ? compareRes.results : [];
-  }, [compareRes]);
+  // ====== EDIT ACTIONS ======
+  function renameCluster(clusterId, newTitle) {
+    setClusters((prev) =>
+      prev.map((c) => (c.id === clusterId ? { ...c, title: newTitle } : c))
+    );
+    setAgreed(false);
+  }
 
-  const clusters = Array.isArray(clusterRes?.clusters) ? clusterRes.clusters : [];
+  function addCluster() {
+    setClusters((prev) => [
+      ...prev,
+      { id: `c${Date.now()}`, title: "Cluster Baharu", items: [] },
+    ]);
+    setAgreed(false);
+  }
 
+  function moveItem(itemId, fromClusterId, toClusterId) {
+    if (fromClusterId === toClusterId) return;
+
+    setClusters((prev) => {
+      const next = prev.map((c) => ({ ...c, items: [...c.items] }));
+      const from = next.find((c) => c.id === fromClusterId);
+      const to = next.find((c) => c.id === toClusterId);
+      if (!from || !to) return prev;
+
+      const idx = from.items.findIndex((x) => x.id === itemId);
+      if (idx === -1) return prev;
+
+      const [picked] = from.items.splice(idx, 1);
+      to.items.push(picked);
+      return next;
+    });
+
+    setAgreed(false);
+  }
+
+  function removeEmptyCluster(clusterId) {
+    setClusters((prev) => prev.filter((c) => c.id !== clusterId));
+    setAgreed(false);
+  }
+
+  function doAgreed() {
+    if (!clusters.length) {
+      alert("Tiada clustering untuk di-Agreed. Sila Run AI (Clustering) dahulu.");
+      return;
+    }
+
+    // optional: validate tajuk cluster tak kosong
+    const hasEmptyTitle = clusters.some((c) => !String(c.title || "").trim());
+    if (hasEmptyTitle) {
+      alert("Sila pastikan semua tajuk cluster diisi sebelum Agreed.");
+      return;
+    }
+
+    setAgreed(true);
+  }
+
+  // load last result on mount (optional)
+  useEffect(() => {
+    loadResult();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ====== UI ======
   return (
-    <div style={{ padding: 16, fontFamily: "system-ui, Arial" }}>
-      <h2 style={{ margin: "0 0 12px" }}>Cluster Page</h2>
+    <div style={{ padding: 18, maxWidth: 1200, margin: "0 auto" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+        <h1 style={{ marginTop: 0 }}>Cluster Page</h1>
+        {onBack ? (
+          <button onClick={onBack} style={{ height: 36 }}>
+            Back
+          </button>
+        ) : null}
+      </div>
 
-      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+      <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
         <input
           value={sessionId}
           onChange={(e) => setSessionId(e.target.value)}
-          placeholder="Session ID (cth: Masjid)"
-          style={{ padding: 8, width: 260 }}
+          style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #ccc" }}
         />
 
-        <button onClick={runCluster} disabled={clusterLoading}>
-          {clusterLoading ? "Running Cluster..." : "Run AI Cluster (OpenAI)"}
+        {/* 1) Rename button */}
+        <button
+          onClick={runClustering}
+          disabled={busy || aiLoading}
+          style={{ height: 36 }}
+        >
+          {aiLoading ? "NOSS AI Loading..." : "Run AI (Clustering)"}
         </button>
 
-        <button onClick={applyCluster} disabled={applyLoading}>
-          {applyLoading ? "Applying..." : "Apply AI (Merge)"}
+        <button onClick={loadResult} disabled={busy} style={{ height: 36 }}>
+          Reload Result
         </button>
 
-        <button onClick={() => loadCus()} disabled={cusLoading}>
-          {cusLoading ? "Loading CU..." : "Reload CU (cus)"}
-        </button>
-
-        <button onClick={runMySpikeCompare} disabled={compareLoading}>
-          {compareLoading ? "Running Compare..." : "Run AI Comparison (MySPIKE)"}
+        <button
+          onClick={applyMerge}
+          disabled={busy || !agreed}
+          title={!agreed ? "Sila Agreed dahulu" : "Proceed Merge"}
+          style={{ height: 36 }}
+        >
+          Apply AI (Merge)
         </button>
       </div>
 
-      {(clusterErr || applyErr || cusErr || compareErr) && (
-        <div style={{ marginTop: 12, padding: 10, border: "1px solid #f3b4b4", background: "#fff7f7" }}>
-          {clusterErr ? <div><b>Cluster error:</b> {clusterErr}</div> : null}
-          {applyErr ? <div><b>Apply error:</b> {applyErr}</div> : null}
-          {cusErr ? <div><b>CUS error:</b> {cusErr}</div> : null}
-          {compareErr ? <div><b>Compare error:</b> {compareErr}</div> : null}
+      {/* status */}
+      <div style={{ marginTop: 10, fontSize: 13, opacity: 0.85 }}>
+        Session: <b>{String(sessionId || "")}</b>{" "}
+        {agreed ? (
+          <span style={{ marginLeft: 10, color: "green", fontWeight: 700 }}>
+            ✓ AGREED
+          </span>
+        ) : (
+          <span style={{ marginLeft: 10, color: "#b45309", fontWeight: 700 }}>
+            ✱ BELUM AGREED
+          </span>
+        )}
+      </div>
+
+      {err ? (
+        <div style={{ marginTop: 10, color: "#b91c1c" }}>
+          Error: {err}
         </div>
-      )}
+      ) : null}
 
-      {/* Hasil Clustering */}
-      {clusterRes ? (
-        <div style={{ marginTop: 16 }}>
-          <h3 style={{ margin: "10px 0" }}>Hasil Clustering (OpenAI)</h3>
-          <div style={{ fontSize: 13, opacity: 0.9 }}>
-            sessionId: <b>{clusterRes.sessionId}</b> | generatedAt: {clusterRes.generatedAt}
+      {/* 2) ruang edit sebelum merge */}
+      <div
+        style={{
+          marginTop: 16,
+          padding: 14,
+          border: "1px solid #ddd",
+          borderRadius: 14,
+        }}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+          <div style={{ fontWeight: 800 }}>Edit Clustering (sebelum Merge)</div>
+          <div style={{ display: "flex", gap: 10 }}>
+            <button onClick={addCluster} disabled={busy} style={{ height: 32 }}>
+              + Add Cluster
+            </button>
+
+            {/* 3) Agreed gate */}
+            <button
+              onClick={doAgreed}
+              disabled={busy || !clusters.length}
+              style={{
+                height: 32,
+                fontWeight: 800,
+                background: agreed ? "#0f766e" : "#111",
+                color: "#fff",
+                border: "1px solid #111",
+                borderRadius: 10,
+                padding: "0 12px",
+                cursor: "pointer",
+              }}
+              title="Lock hasil edit sebelum Merge"
+            >
+              Agreed
+            </button>
           </div>
+        </div>
 
-          <div style={{ marginTop: 10 }}>
-            {clusters.map((c, i) => {
-              const cuTitle = c.suggestedCU?.title || c.title || `CU ${i + 1}`;
-              const waList = (Array.isArray(c.cardIds) ? c.cardIds : [])
-                .map((id) => cardsItems.find((x) => x.id === id))
-                .filter(Boolean);
+        <div style={{ marginTop: 8, fontSize: 12, opacity: 0.8 }}>
+          Anda boleh: <b>ubah tajuk cluster</b> dan <b>pindahkan aktiviti</b>.
+          Selepas selesai, tekan <b>Agreed</b> untuk lock sebelum <b>Apply AI (Merge)</b>.
+        </div>
+      </div>
 
-              return (
-                <div key={i} style={{ marginBottom: 12, padding: 10, border: "1px solid #ddd" }}>
-                  <div style={{ fontWeight: 700 }}>
-                    {cuTitle} <span style={{ fontWeight: 400 }}>— {waList.length} kad</span>
+      {/* paparan cluster list */}
+      <div style={{ marginTop: 14 }}>
+        {clusters.length === 0 ? (
+          <div style={{ opacity: 0.8 }}>
+            Belum ada hasil clustering. Tekan <b>Run AI (Clustering)</b>.
+          </div>
+        ) : (
+          clusters.map((c) => (
+            <div
+              key={c.id}
+              style={{
+                border: "1px solid #ddd",
+                borderRadius: 14,
+                padding: 14,
+                marginBottom: 12,
+                background: agreed ? "#fcfcfc" : "#fff",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  gap: 10,
+                  alignItems: "center",
+                }}
+              >
+                <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                  <input
+                    value={c.title}
+                    disabled={agreed} // bila agreed, lock edit
+                    onChange={(e) => renameCluster(c.id, e.target.value)}
+                    style={{
+                      padding: "8px 10px",
+                      borderRadius: 10,
+                      border: "1px solid #ccc",
+                      fontWeight: 800,
+                      minWidth: 320,
+                      cursor: agreed ? "not-allowed" : "text",
+                    }}
+                  />
+                  <div style={{ opacity: 0.75 }}>
+                    — <b>{c.items.length}</b> aktiviti
                   </div>
-                  {waList.length > 0 ? (
-                    <ul style={{ margin: "8px 0 0 18px" }}>
-                      {waList.map((wa, idx) => (
-                        <li key={idx}>{wa.activity || wa.title || wa.name}</li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <div style={{ marginTop: 6, fontStyle: "italic" }}>Tiada kad dipadankan.</div>
-                  )}
                 </div>
-              );
-            })}
-            {!clusters.length ? <div style={{ marginTop: 8 }}>Tiada clusters.</div> : null}
-          </div>
-        </div>
-      ) : null}
 
-      {/* Apply Result */}
-      {applyRes ? (
-        <div style={{ marginTop: 16, padding: 10, border: "1px solid #cfe6cf", background: "#f6fff6" }}>
-          <b>Apply OK:</b> sessionId {applyRes.sessionId} | cusCount {applyRes.cusCount} | appliedAt{" "}
-          {applyRes.appliedAt}
-        </div>
-      ) : null}
-
-      {/* CUS */}
-      {cusRes ? (
-        <div style={{ marginTop: 16 }}>
-          <h3 style={{ margin: "10px 0" }}>CU/WA (hasil Apply)</h3>
-          <div style={{ fontSize: 13, opacity: 0.9 }}>
-            sessionId: <b>{cusRes.sessionId}</b> | appliedAt: {String(cusRes.appliedAt || "-")}
-          </div>
-
-          {(cusRes.cus || []).map((cu) => (
-            <div key={cu.cuId} style={{ marginTop: 10, padding: 10, border: "1px solid #ddd" }}>
-              <div style={{ fontWeight: 700 }}>
-                {cu.cuId}: {cu.cuTitle}
+                <button
+                  onClick={() => removeEmptyCluster(c.id)}
+                  disabled={agreed || c.items.length > 0}
+                  title={
+                    c.items.length > 0
+                      ? "Hanya boleh buang cluster yang kosong"
+                      : "Buang cluster kosong"
+                  }
+                  style={{ height: 32 }}
+                >
+                  Remove (empty)
+                </button>
               </div>
-              <ul style={{ margin: "8px 0 0 18px" }}>
-                {(cu.activities || []).map((wa) => (
-                  <li key={wa.waId}>
-                    {wa.waId}: {wa.waTitle}
-                  </li>
+
+              <div style={{ marginTop: 10 }}>
+                {c.items.map((it) => (
+                  <div
+                    key={it.id}
+                    style={{
+                      display: "flex",
+                      gap: 10,
+                      alignItems: "center",
+                      padding: "6px 0",
+                      borderBottom: "1px dashed #eee",
+                    }}
+                  >
+                    <div style={{ flex: 1 }}>
+                      • {it.text || <i>(tiada teks)</i>}
+                    </div>
+
+                    <select
+                      disabled={agreed}
+                      value={c.id}
+                      onChange={(e) => moveItem(it.id, c.id, e.target.value)}
+                      style={{
+                        padding: "6px 8px",
+                        borderRadius: 10,
+                        border: "1px solid #ccc",
+                        cursor: agreed ? "not-allowed" : "pointer",
+                        minWidth: 220,
+                      }}
+                      title="Pindahkan aktiviti ke cluster lain"
+                    >
+                      {clusters.map((opt) => (
+                        <option key={opt.id} value={opt.id}>
+                          Move to: {opt.title}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 ))}
-              </ul>
+
+                {c.items.length === 0 ? (
+                  <div style={{ marginTop: 8, opacity: 0.75 }}>
+                    (Cluster kosong)
+                  </div>
+                ) : null}
+              </div>
             </div>
-          ))}
+          ))
+        )}
+      </div>
 
-          {(!cusRes.cus || !cusRes.cus.length) && (
-            <div style={{ marginTop: 8 }}>Belum ada CU. Klik “Apply AI (Merge)” dahulu.</div>
-          )}
-        </div>
-      ) : null}
-
-      {/* MySPIKE Compare */}
-      {compareRes ? (
-        <div style={{ marginTop: 18 }}>
-          <h3 style={{ margin: "10px 0" }}>MySPIKE Comparison</h3>
-          <div style={{ marginBottom: 8 }}>
-            MySPIKE Index:{" "}
-            <b>{compareRes?.myspike?.totalCandidates ? `${compareRes.myspike.totalCandidates} CU` : "—"}</b>
-            {" "} | ADA: <b>{compareRes?.summary?.ada ?? 0}</b> | TIADA: <b>{compareRes?.summary?.tiada ?? 0}</b>
-          </div>
-
-          {compareRows.length ? (
-            <table cellPadding="8" style={{ borderCollapse: "collapse", width: "100%" }}>
-              <thead>
-                <tr>
-                  <th align="left" style={{ borderBottom: "1px solid #ccc" }}>CU (iNOSS)</th>
-                  <th align="left" style={{ borderBottom: "1px solid #ccc" }}>Status</th>
-                  <th align="left" style={{ borderBottom: "1px solid #ccc" }}>Best Score</th>
-                  <th align="left" style={{ borderBottom: "1px solid #ccc" }}>Top MySPIKE Match</th>
-                </tr>
-              </thead>
-              <tbody>
-                {compareRows.map((r, i) => {
-                  const inputTitle = r?.input?.cuTitle || "-";
-                  const status = r?.decision?.status || "-";
-                  const score = r?.decision?.bestScore ?? 0;
-                  const top = Array.isArray(r?.matches) ? r.matches[0] : null;
-                  return (
-                    <tr key={i}>
-                      <td style={{ borderBottom: "1px solid #eee" }}>{inputTitle}</td>
-                      <td style={{ borderBottom: "1px solid #eee" }}>{status}</td>
-                      <td style={{ borderBottom: "1px solid #eee" }}>{Number(score).toFixed(4)}</td>
-                      <td style={{ borderBottom: "1px solid #eee" }}>
-                        {top ? `${top.cuCode} — ${top.cuTitle} (score ${top.score})` : "—"}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          ) : (
-            <div>Tiada data.</div>
-          )}
+      {/* debug info kecil */}
+      {rawResult?.generatedAt ? (
+        <div style={{ marginTop: 10, fontSize: 12, opacity: 0.75 }}>
+          generatedAt: {String(rawResult.generatedAt)}
         </div>
       ) : null}
     </div>
