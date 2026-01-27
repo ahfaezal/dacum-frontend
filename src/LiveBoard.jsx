@@ -178,11 +178,19 @@ export default function LiveBoard({ onAgreed }) {
   }
 
   // ✅ NEW: hanya bila user tekan "Cluster Page"
-  function goClusterPage() {
-    const sid = String(sessionId || "").trim();
-    if (!sid) return alert("Sila isi Session dulu.");
-    onAgreed?.(sid);
+ function goClusterPage() {
+  const sid = String(sessionId || "").trim();
+  if (!sid) return alert("Sila isi Session dulu.");
+
+  // kalau App pass onAgreed, guna itu
+  if (typeof onAgreed === "function") {
+    onAgreed(sid);
+    return;
   }
+
+  // fallback: terus navigate guna hash (confirm jalan)
+  window.location.hash = `#/cluster?session=${encodeURIComponent(sid)}`;
+}
 
   function goFullscreen() {
     const el = document.documentElement;
