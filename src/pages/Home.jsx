@@ -1,5 +1,5 @@
 import FeatureCard from "../components/FeatureCard";
-import pfhLogo from "../assets/pfh-logo.png";
+import pfhLogo from "../assets/logo-pfh.png";
 
 export default function Home() {
   const go = (hashPath) => {
@@ -64,13 +64,27 @@ const styles = {
     flex: 0.9,
     position: "relative",
   },
+
+  // ✅ tambah: logo + badge dalam satu baris
+  brand: {
+    display: "flex",
+    alignItems: "center",
+    gap: 16,
+    marginBottom: 30,
+  },
+  // ✅ tambah: size logo
+  logo: {
+    height: 56,
+    width: "auto",
+    display: "block",
+  },
+
   badge: {
     background: "#fff",
     color: "#000",
     display: "inline-block",
     padding: "10px 18px",
     borderRadius: 24,
-    marginBottom: 40,
     boxShadow: "0 8px 24px rgba(0,0,0,0.25)",
   },
   title: {
