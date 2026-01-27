@@ -1,93 +1,62 @@
 import React, { useEffect, useMemo, useState } from "react";
+console.log("ClusterPage.jsx LOADED ✅ v2026-01-27-CLUSTER-RESOLVE-CARDIDS-1");
 
 const API_BASE =
   (import.meta?.env?.VITE_API_BASE && String(import.meta.env.VITE_API_BASE)) ||
   "https://dacum-backend.onrender.com";
 
-function normalizeClusterResult(raw) {
+/** Build map: cardId -> text */
+function buildCardMap(sessionCards = []) {
+  const map = new Map();
+  (Array.isArray(sessionCards) ? sessionCards : []).forEach((c) => {
+    const id = String(c?.id ?? c?.cardId ?? "");
+    if (!id) return;
+    const text = String(c?.text ?? c?.card ?? c?.title ?? c?.activity ?? "").trim();
+    map.set(id, text);
+  });
+  return map;
+}
+
+/** Extract cards list from any backend shape */
+function extractSessionCards(any) {
+  // common shapes
+  return (
+    any?.cards ??
+    any?.sessionCards ??
+    any?.items ??
+    any?.data ??
+    any?.result ??
+    []
+  );
+}
+
+/** Normalize cluster result into {id,title,items:[{id,text}]} */
+function normalizeClustersWithCardMap(raw, cardMap) {
   if (!raw) return [];
 
-  const container =
-    raw.clusters ??
-    raw.result ??
-    raw.data ??
-    raw.output ??
-    raw.payload ??
-    raw;
+  const clusters = raw?.clusters ?? raw?.result?.clusters ?? raw?.data?.clusters ?? [];
+  if (!Array.isArray(clusters)) return [];
 
-  const getText = (x) =>
-    String(
-      x?.activity ??
-        x?.name ??
-        x?.text ??
-        x?.title ??
-        x?.wa ??
-        x?.waTitle ??
-        x?.card ??
-        x ??
-        ""
-    ).trim();
+  return clusters.map((c, idx) => {
+    const title = String(c?.title ?? c?.name ?? c?.label ?? `Cluster ${idx + 1}`).trim();
 
-  const pickList = (c) =>
-    c?.items ??
-    c?.cards ??
-    c?.list ??
-    c?.activities ??
-    c?.members ??
-    c?.children ??
-    c?.cardsInCluster ??
-    c?.membersCards ??
-    [];
+    // IMPORTANT: backend returns cardIds (numbers)
+    const cardIds = c?.cardIds ?? c?.ids ?? c?.members ?? [];
+    const arr = Array.isArray(cardIds) ? cardIds : [];
 
-  // 2) Jika backend bagi array cluster
-  if (Array.isArray(container)) {
-    return container.map((c, idx) => {
-      const title = String(
-        c?.title ??
-          c?.name ??
-          c?.clusterTitle ??
-          c?.label ??
-          `Cluster ${idx + 1}`
-      ).trim();
+    const items = arr
+      .map((cid, j) => {
+        const id = String(cid);
+        const text = (cardMap && cardMap.get(id)) || "";
+        return {
+          id: id || `${idx}-${j}`,
+          text: text || `(Kad ${id})`,
+        };
+      })
+      .filter((it) => String(it.id || "").trim());
 
-      const list = pickList(c);
-      const arr = Array.isArray(list) ? list : [];
-
-      const items = arr
-        .map((x, j) => ({
-          id: String(x?.id ?? x?.cardId ?? x?.waId ?? `${idx}-${j}`),
-          text: getText(x),
-        }))
-        .filter((it) => it.text);
-
-      return { id: String(c?.id ?? `c${idx + 1}`), title, items };
-    });
-  }
-
-  // 3) Jika backend bagi object map { "Cluster": [...] }
-  if (container && typeof container === "object") {
-    const obj =
-      container.groups ?? container.clusterMap ?? container.map ?? container;
-
-    if (obj && typeof obj === "object" && !Array.isArray(obj)) {
-      const entries = Object.entries(obj);
-      const useful = entries.filter(([, v]) => Array.isArray(v));
-      if (useful.length) {
-        return useful.map(([k, arr], idx) => ({
-          id: `c${idx + 1}`,
-          title: String(k).trim(),
-          items: (Array.isArray(arr) ? arr : [])
-            .map((x, j) => ({
-              id: String(x?.id ?? x?.cardId ?? x?.waId ?? `${idx}-${j}`),
-              text: getText(x),
-            }))
-            .filter((it) => it.text),
-        }));
-      }
-    }
-  }
-
-  return [];
+    return { id: String(c?.id ?? `c${idx + 1}`), title, items };
+  });
 }
 
 export default function ClusterPage({ initialSessionId = "Masjid", onBack }) {
@@ -112,10 +81,6 @@ export default function ClusterPage({ initialSessionId = "Masjid", onBack }) {
   const [aiLoading, setAiLoading] = useState(false);
   const [err, setErr] = useState("");
 
-  useEffect(() => {
-    console.log("ClusterPage.jsx LOADED ✅ v2026-01-27-CLUSTER-FALLBACK-2");
-  }, []);
-
   // bila session berubah -> reset state
   useEffect(() => {
     setRawResult(null);
@@ -131,7 +96,6 @@ export default function ClusterPage({ initialSessionId = "Masjid", onBack }) {
     try {
       json = text ? JSON.parse(text) : {};
     } catch {
-      // kalau bukan JSON, simpan sebagai raw
       json = { raw: text };
     }
     if (!res.ok) throw new Error(json?.error || `GET ${path} -> ${res.status}`);
@@ -144,7 +108,6 @@ export default function ClusterPage({ initialSessionId = "Masjid", onBack }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body || {}),
     });
-
     const text = await res.text().catch(() => "");
     let json = {};
     try {
@@ -152,9 +115,39 @@ export default function ClusterPage({ initialSessionId = "Masjid", onBack }) {
     } catch {
       json = { raw: text };
     }
-
     if (!res.ok) throw new Error(json?.error || `POST ${path} -> ${res.status}`);
     return json;
+  }
+
+  /** Try get session cards (to resolve cardIds -> text) */
+  async function loadSessionCards(sid) {
+    const tries = [
+      // ✅ best guess: session cards endpoint
+      `/api/session/cards/${encodeURIComponent(sid)}`,
+
+      // alternatives (if you implemented differently)
+      `/api/session/${encodeURIComponent(sid)}/cards`,
+      `/api/cards/${encodeURIComponent(sid)}`,
+      `/api/session/items/${encodeURIComponent(sid)}`,
+    ];
+
+    let last = "";
+    for (const p of tries) {
+      try {
+        console.log("LOAD CARDS TRY:", p);
+        const out = await apiGet(p);
+        console.log("LOAD CARDS OK:", p, out);
+        const cards = extractSessionCards(out);
+        return Array.isArray(cards) ? cards : [];
+      } catch (e) {
+        last = String(e?.message || e);
+        console.warn("LOAD CARDS FAIL:", p, last);
+      }
+    }
+
+    // fallback: empty cards
+    console.warn("LOAD CARDS fallback EMPTY:", last);
+    return [];
   }
 
   async function loadResult() {
@@ -163,6 +156,7 @@ export default function ClusterPage({ initialSessionId = "Masjid", onBack }) {
 
     setErr("");
 
+    // 1) load cluster result
     const tries = [
       `/api/cluster/result/${encodeURIComponent(sid)}`,
       `/api/cluster/result?session=${encodeURIComponent(sid)}`,
@@ -170,30 +164,34 @@ export default function ClusterPage({ initialSessionId = "Masjid", onBack }) {
       `/api/cluster/result?sid=${encodeURIComponent(sid)}`,
     ];
 
-    try {
-      let out = null;
-      let last = "";
+    let out = null;
+    let last = "";
 
-      for (const p of tries) {
+    try {
+      for (const path of tries) {
         try {
-          console.log("LOAD RESULT TRY:", p);
-          out = await apiGet(p);
-          console.log("LOAD RESULT OK:", p, out);
+          console.log("LOAD RESULT TRY:", path);
+          out = await apiGet(path);
+          console.log("LOAD RESULT OK:", path, out);
           break;
         } catch (e) {
           last = String(e?.message || e);
-          console.warn("LOAD RESULT FAIL:", p, last);
+          console.warn("LOAD RESULT FAIL:", path, last);
         }
       }
 
-      if (!out)
-        throw new Error(
-          last || "Gagal load cluster result (tiada endpoint yang serasi)."
-        );
+      if (!out) throw new Error(last || "Gagal load cluster result (tiada endpoint serasi).");
+
+      // 2) load cards to resolve texts
+      const cards = await loadSessionCards(sid);
+      const cardMap = buildCardMap(cards);
+
+      // 3) normalize clusters using cardMap
+      const normalized = normalizeClustersWithCardMap(out, cardMap);
 
       setRawResult(out);
-      setClusters(normalizeClusterResult(out));
-      setAgreed(false);
+      setClusters(normalized);
+      setAgreed(false); // bila load result baru, perlu agreed semula
     } catch (e) {
       setErr(String(e?.message || e));
     }
@@ -210,16 +208,16 @@ export default function ClusterPage({ initialSessionId = "Masjid", onBack }) {
     console.log("RUN CLUSTER clicked, sid =", sid);
 
     const tries = [
-      // A) (kadang 404)
+      // A) lama: /api/cluster/run/:sid (anda nampak 404)
       { path: `/api/cluster/run/${encodeURIComponent(sid)}`, body: {} },
 
-      // B) body sessionId (ini nampaknya betul untuk backend anda)
+      // B) body sessionId (ini yang SUCCESS dalam console anda)
       { path: `/api/cluster/run`, body: { sessionId: sid } },
 
-      // C) body sid
+      // C) body sid (fallback)
       { path: `/api/cluster/run`, body: { sid } },
 
-      // D) query session
+      // D) query ?session=
       { path: `/api/cluster/run?session=${encodeURIComponent(sid)}`, body: {} },
     ];
 
@@ -229,23 +227,9 @@ export default function ClusterPage({ initialSessionId = "Masjid", onBack }) {
       for (const t of tries) {
         try {
           console.log("TRY:", t.path, t.body);
-
-          // ✅ ambil response
-          const out = await apiPost(t.path, t.body);
-
-          console.log("SUCCESS:", t.path, out);
-
-          // ✅ jika backend pulangkan result terus dalam response
-          const normalized = normalizeClusterResult(out);
-          if (normalized.length) {
-            setRawResult(out);
-            setClusters(normalized);
-            setAgreed(false);
-          } else {
-            // ✅ fallback: backend hanya run & simpan result
-            await loadResult();
-          }
-
+          await apiPost(t.path, t.body);
+          console.log("SUCCESS:", t.path);
+          await loadResult();
           return;
         } catch (e) {
           lastErr = String(e?.message || e);
@@ -253,10 +237,7 @@ export default function ClusterPage({ initialSessionId = "Masjid", onBack }) {
         }
       }
 
-      throw new Error(
-        lastErr ||
-          "Run AI (Clustering) gagal: semua endpoint tidak serasi."
-      );
+      throw new Error(lastErr || "Run AI (Clustering) gagal: semua endpoint tidak serasi.");
     } catch (e) {
       setErr(String(e?.message || e));
       alert(String(e?.message || e));
@@ -271,14 +252,13 @@ export default function ClusterPage({ initialSessionId = "Masjid", onBack }) {
     if (!sid) return alert("Sila isi Session dulu.");
 
     if (!agreed) {
-      return alert(
-        "Sila tekan 'Agreed' dahulu selepas anda selesai edit clustering."
-      );
+      return alert("Sila tekan 'Agreed' dahulu selepas anda selesai edit clustering.");
     }
 
     setBusy(true);
     setErr("");
     try {
+      // NOTE: endpoint apply mesti wujud di backend
       await apiPost(`/api/cluster/apply/${encodeURIComponent(sid)}`, {
         clusters,
         source: "manual_edit_before_merge",
@@ -313,12 +293,12 @@ export default function ClusterPage({ initialSessionId = "Masjid", onBack }) {
     if (fromClusterId === toClusterId) return;
 
     setClusters((prev) => {
-      const next = prev.map((c) => ({ ...c, items: [...c.items] }));
+      const next = prev.map((c) => ({ ...c, items: [...(c.items || [])] }));
       const from = next.find((c) => c.id === fromClusterId);
       const to = next.find((c) => c.id === toClusterId);
       if (!from || !to) return prev;
 
-      const idx = from.items.findIndex((x) => x.id === itemId);
+      const idx = (from.items || []).findIndex((x) => x.id === itemId);
       if (idx === -1) return prev;
 
       const [picked] = from.items.splice(idx, 1);
@@ -339,13 +319,11 @@ export default function ClusterPage({ initialSessionId = "Masjid", onBack }) {
       alert("Tiada clustering untuk di-Agreed. Sila Run AI (Clustering) dahulu.");
       return;
     }
-
     const hasEmptyTitle = clusters.some((c) => !String(c.title || "").trim());
     if (hasEmptyTitle) {
       alert("Sila pastikan semua tajuk cluster diisi sebelum Agreed.");
       return;
     }
-
     setAgreed(true);
   }
 
@@ -371,18 +349,10 @@ export default function ClusterPage({ initialSessionId = "Masjid", onBack }) {
         <input
           value={sessionId}
           onChange={(e) => setSessionId(e.target.value)}
-          style={{
-            padding: "8px 10px",
-            borderRadius: 10,
-            border: "1px solid #ccc",
-          }}
+          style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #ccc" }}
         />
 
-        <button
-          onClick={runClustering}
-          disabled={busy || aiLoading}
-          style={{ height: 36 }}
-        >
+        <button onClick={runClustering} disabled={busy || aiLoading} style={{ height: 36 }}>
           {aiLoading ? "NOSS AI Loading..." : "Run AI (Clustering)"}
         </button>
 
@@ -400,6 +370,7 @@ export default function ClusterPage({ initialSessionId = "Masjid", onBack }) {
         </button>
       </div>
 
+      {/* status */}
       <div style={{ marginTop: 10, fontSize: 13, opacity: 0.85 }}>
         Session: <b>{String(sessionId || "")}</b>{" "}
         {agreed ? (
@@ -413,10 +384,9 @@ export default function ClusterPage({ initialSessionId = "Masjid", onBack }) {
         )}
       </div>
 
-      {err ? (
-        <div style={{ marginTop: 10, color: "#b91c1c" }}>Error: {err}</div>
-      ) : null}
+      {err ? <div style={{ marginTop: 10, color: "#b91c1c" }}>Error: {err}</div> : null}
 
+      {/* ruang edit sebelum merge */}
       <div
         style={{
           marginTop: 16,
@@ -425,9 +395,7 @@ export default function ClusterPage({ initialSessionId = "Masjid", onBack }) {
           borderRadius: 14,
         }}
       >
-        <div
-          style={{ display: "flex", justifyContent: "space-between", gap: 10 }}
-        >
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
           <div style={{ fontWeight: 800 }}>Edit Clustering (sebelum Merge)</div>
           <div style={{ display: "flex", gap: 10 }}>
             <button onClick={addCluster} disabled={busy} style={{ height: 32 }}>
@@ -455,12 +423,12 @@ export default function ClusterPage({ initialSessionId = "Masjid", onBack }) {
         </div>
 
         <div style={{ marginTop: 8, fontSize: 12, opacity: 0.8 }}>
-          Anda boleh: <b>ubah tajuk cluster</b> dan <b>pindahkan aktiviti</b>.
-          Selepas selesai, tekan <b>Agreed</b> untuk lock sebelum{" "}
-          <b>Apply AI (Merge)</b>.
+          Anda boleh: <b>ubah tajuk cluster</b> dan <b>pindahkan aktiviti</b>. Selepas selesai,
+          tekan <b>Agreed</b> untuk lock sebelum <b>Apply AI (Merge)</b>.
         </div>
       </div>
 
+      {/* paparan cluster list */}
       <div style={{ marginTop: 14 }}>
         {clusters.length === 0 ? (
           <div style={{ opacity: 0.8 }}>
@@ -501,15 +469,15 @@ export default function ClusterPage({ initialSessionId = "Masjid", onBack }) {
                     }}
                   />
                   <div style={{ opacity: 0.75 }}>
-                    — <b>{c.items.length}</b> aktiviti
+                    — <b>{(c.items || []).length}</b> aktiviti
                   </div>
                 </div>
 
                 <button
                   onClick={() => removeEmptyCluster(c.id)}
-                  disabled={agreed || c.items.length > 0}
+                  disabled={agreed || (c.items || []).length > 0}
                   title={
-                    c.items.length > 0
+                    (c.items || []).length > 0
                       ? "Hanya boleh buang cluster yang kosong"
                       : "Buang cluster kosong"
                   }
@@ -520,7 +488,7 @@ export default function ClusterPage({ initialSessionId = "Masjid", onBack }) {
               </div>
 
               <div style={{ marginTop: 10 }}>
-                {c.items.map((it) => (
+                {(c.items || []).map((it) => (
                   <div
                     key={it.id}
                     style={{
@@ -531,9 +499,7 @@ export default function ClusterPage({ initialSessionId = "Masjid", onBack }) {
                       borderBottom: "1px dashed #eee",
                     }}
                   >
-                    <div style={{ flex: 1 }}>
-                      • {it.text || <i>(tiada teks)</i>}
-                    </div>
+                    <div style={{ flex: 1 }}>• {it.text || <i>(tiada teks)</i>}</div>
 
                     <select
                       disabled={agreed}
@@ -557,10 +523,8 @@ export default function ClusterPage({ initialSessionId = "Masjid", onBack }) {
                   </div>
                 ))}
 
-                {c.items.length === 0 ? (
-                  <div style={{ marginTop: 8, opacity: 0.75 }}>
-                    (Cluster kosong)
-                  </div>
+                {(c.items || []).length === 0 ? (
+                  <div style={{ marginTop: 8, opacity: 0.75 }}>(Cluster kosong)</div>
                 ) : null}
               </div>
             </div>
