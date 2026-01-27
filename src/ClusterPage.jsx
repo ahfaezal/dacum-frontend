@@ -173,22 +173,41 @@ async function runClustering() {
   setAiLoading(true);
   setErr("");
 
-  try {
-    // Cuba A: /api/cluster/run/:sessionId
-    try {
-      await apiPost(`/api/cluster/run/${encodeURIComponent(sid)}`, {});
-    } catch (e1) {
-      const msg1 = String(e1?.message || e1);
+  console.log("RUN CLUSTER clicked, sid =", sid);
 
-      // Jika 404, cuba B: /api/cluster/run (body)
-      if (/404\b/.test(msg1)) {
-        await apiPost(`/api/cluster/run`, { sessionId: sid });
-      } else {
-        throw e1;
+  const tries = [
+    // A) (yang sekarang 404)
+    { path: `/api/cluster/run/${encodeURIComponent(sid)}`, body: {} },
+
+    // B) body sessionId
+    { path: `/api/cluster/run`, body: { sessionId: sid } },
+
+    // C) body sid (kadang backend guna sid)
+    { path: `/api/cluster/run`, body: { sid } },
+
+    // D) query (kadang backend guna ?session=)
+    { path: `/api/cluster/run?session=${encodeURIComponent(sid)}`, body: {} },
+  ];
+
+  let lastErr = "";
+
+  try {
+    for (const t of tries) {
+      try {
+        console.log("TRY:", t.path, t.body);
+        await apiPost(t.path, t.body);
+        console.log("SUCCESS:", t.path);
+        await loadResult();
+        return;
+      } catch (e) {
+        lastErr = String(e?.message || e);
+        console.warn("FAIL:", t.path, lastErr);
+        // terus cuba next
       }
     }
 
-    await loadResult();
+    // jika semua gagal
+    throw new Error(lastErr || "Run AI (Clustering) gagal: semua endpoint tidak serasi.");
   } catch (e) {
     setErr(String(e?.message || e));
     alert(String(e?.message || e));
