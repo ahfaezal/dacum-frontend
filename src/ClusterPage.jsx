@@ -297,45 +297,41 @@ async function loadResult() {
   }
 }
 
-  async function runClustering() {
-    const sid = String(sessionId || "").trim();
-    if (!sid) return alert("Sila isi Session dulu.");
-
-    setBusy(true);
-    setAiLoading(true);
-    setErr("");
-
-    const tries = [
-      { path: `/api/cluster/run/${encodeURIComponent(sid)}`, body: {} },
-      { path: `/api/cluster/run`, body: { sessionId: sid } },
-      { path: `/api/cluster/run`, body: { sid } },
-      { path: `/api/cluster/run?session=${encodeURIComponent(sid)}`, body: {} },
-    ];
-
-    let lastErr = "";
-
-    try {
-      for (const t of tries) {
-        try {
-          console.log("RUN TRY:", t.path, t.body);
-          await apiPost(t.path, t.body);
-          console.log("RUN OK:", t.path);
-          await loadResult();
-          return;
-        } catch (e) {
-          lastErr = String(e?.message || e);
-          console.warn("RUN FAIL:", t.path, lastErr);
-        }
-      }
-      throw new Error(lastErr || "Run AI (Clustering) gagal: semua endpoint tidak serasi.");
-    } catch (e) {
-      setErr(String(e?.message || e));
-      alert(String(e?.message || e));
-    } finally {
-      setBusy(false);
-      setAiLoading(false);
-    }
+async function runClustering() {
+  const sid = String(sessionId || "").trim();
+  if (!sid) {
+    alert("Sila isi Session dulu.");
+    return;
   }
+
+  setBusy(true);
+  setAiLoading(true);
+  setErr("");
+
+  try {
+    console.log("RUN CLUSTER:", sid);
+
+    const out = await apiPost(
+      `/api/cluster/run/${encodeURIComponent(sid)}`,
+      {}
+    );
+
+    console.log("RUN CLUSTER OK:", out);
+
+    setRawResult(out);       // jika anda guna
+    setClusterResult(out);  // preview
+    setAgreed(false);
+
+    // refresh result dari store (optional tapi kemas)
+    await loadResult();
+  } catch (e) {
+    setErr(String(e?.message || e));
+    alert(String(e?.message || e));
+  } finally {
+    setBusy(false);
+    setAiLoading(false);
+  }
+}
 
   /** Load CU/WA output from server.js (session.cus) */
   async function loadCuWaOutput(sid) {
