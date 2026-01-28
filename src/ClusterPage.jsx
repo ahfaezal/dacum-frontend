@@ -710,11 +710,22 @@ export default function ClusterPage({ onBack }) {
 
 function Badge({ status }) {
   const s = String(status || "").toUpperCase();
-  const cls =
-    s === "ADA"
-      ? "inline-block px-2 py-0.5 rounded bg-green-100 text-green-800 text-xs font-semibold"
-      : "inline-block px-2 py-0.5 rounded bg-gray-200 text-gray-800 text-xs font-semibold";
-  return <span className={cls}>{s || "—"}</span>;
+  const isAda = s === "ADA";
+
+  const style = {
+    display: "inline-block",
+    padding: "2px 10px",
+    borderRadius: 999,
+    fontSize: 12,
+    fontWeight: 800,
+    border: "1px solid",
+    background: isAda ? "#E7F7EE" : "#F2F2F2",
+    color: isAda ? "#0F6A3B" : "#333",
+    borderColor: isAda ? "#9AD8B2" : "#DDD",
+    lineHeight: "18px",
+  };
+
+  return <span style={style}>{s || "—"}</span>;
 }
 
 function fmtNum(x, d = 4) {
