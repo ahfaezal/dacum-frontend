@@ -153,36 +153,23 @@ export default function LiveBoard({ onAgreed }) {
 
     let alive = true;
 
-    async function tick() {
+  async function tick() {
+    if (!alive) return;
+
+    const sid = String(sessionId || "").trim();
+    if (!sid) return;
+
+    try {
+      const out = await apiGet(`/api/liveboard/${encodeURIComponent(sid)}`);
       if (!alive) return;
-      const sid = String(sessionId || "").trim();
-      if (!sid) return;
 
-      // A) cuba poll S3 liveboard dulu
-      try {
-        const out = await apiGet(`/api/liveboard/${encodeURIComponent(sid)}`);
-        if (!alive) return;
-
-        const data = out?.data || {};
-        const nextCards = Array.isArray(data?.cards) ? data.cards : null;
-        if (nextCards) setCards(nextCards);
-        return;
-      } catch {
-        // ignore dan cuba fallback
-      }
-
-      // B) fallback: endpoint lama
-      try {
-        const r = await fetch(`${apiBase}/api/cards/${encodeURIComponent(sid)}`);
-        const j = await r.json().catch(() => null);
-        if (!alive) return;
-
-        if (j && j.ok && Array.isArray(j.items)) setCards(j.items);
-        else if (Array.isArray(j)) setCards(j);
-      } catch {
-        // ignore
-      }
+      const data = out?.data || {};
+      const nextCards = Array.isArray(data?.cards) ? data.cards : [];
+      setCards(nextCards);
+    } catch {
+      // senyap je – elak ganggu fasilitator
     }
+  }
 
     tick();
     const t = setInterval(tick, 1200);
@@ -191,32 +178,6 @@ export default function LiveBoard({ onAgreed }) {
       clearInterval(t);
     };
   }, [apiBase, sessionId, freeze]);
-
-  // =========
-  // 4) Auto-save ke S3 bila cards berubah (debounce)
-  // =========
-  useEffect(() => {
-    const sid = String(sessionId || "").trim();
-    if (!sid) return;
-    if (!hydrated) return; // penting: elak overwrite data S3 sebelum load siap
-
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => {
-      apiPost(`/api/liveboard/${encodeURIComponent(sid)}`, {
-        data: {
-          sessionId: sid,
-          cards,
-          version: 1,
-        },
-      }).catch(() => {
-        // senyap je — tak nak ganggu fasilitator masa live
-      });
-    }, 800);
-
-    return () => {
-      if (saveTimer.current) clearTimeout(saveTimer.current);
-    };
-  }, [apiBase, sessionId, cards, hydrated]);
 
   // =========
   // Actions
