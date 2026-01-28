@@ -152,21 +152,6 @@ function normalizeMySpikeCompare(any) {
   return { ok: rows.length > 0, rows, summary };
 }
 
-  // summary (ikut backend lama)
-  const indexCount = root?.mySpikeIndex ?? root?.indexCount ?? root?.totalIndex;
-  const ada = root?.ada ?? root?.found ?? root?.matchCount;
-  const tiada = root?.tiada ?? root?.notFound ?? root?.missCount;
-
-  const summaryParts = [];
-  if (typeof indexCount !== "undefined") summaryParts.push(`MySPIKE Index: ${indexCount}`);
-  if (typeof ada !== "undefined") summaryParts.push(`ADA: ${ada}`);
-  if (typeof tiada !== "undefined") summaryParts.push(`TIADA: ${tiada}`);
-
-  const summary = summaryParts.join(" | ");
-
-  return { ok: rows.length > 0, rows, summary };
-}
-
 export default function ClusterPage({ initialSessionId = "Masjid", onBack }) {
   const apiBase = useMemo(() => {
     const v = String(API_BASE || "").trim();
