@@ -164,21 +164,30 @@ export default function ClusterPage({ onBack }) {
 
   const sidTrim = String(sessionId || "").trim();
 
-  async function loadCards(sid) {
-    if (!sid) return [];
-    // ✅ server.js anda ada route: GET /cards/:sessionId
-    const data = await apiGet(`/api/liveboard/${encodeURIComponent(sid)}`);
-    const items = Array.isArray(data?.data?.cards) ? data.data.cards : [];
-    const normalized = items.map((x) => ({
-      id: String(x.id || ""),
-      activity: String(x.activity || x.text || x.title || ""),
-      time: String(x.time || ""),
-      _src: String(x._src || x.src || ""),
-      name: x.name ? String(x.name) : "",
-    }));
-    setCards(normalized);
-    return normalized;
-  }
+async function loadCards(sid) {
+  const s = String(sid || "").trim();
+  if (!s) return [];
+
+  // ✅ Ambil dari LiveBoard (S3) supaya konsisten dengan clustering
+  const lb = await apiGet(`/api/liveboard/${encodeURIComponent(s)}`);
+
+  // backend liveboard biasanya pulang { ok:true, source:"s3", data:{ sessionId, cards:[...] } }
+  const raw = Array.isArray(lb?.data?.cards) ? lb.data.cards : [];
+
+  // Normalisasi minimum supaya UI stabil
+  const normalized = raw
+    .map((c) => ({
+      id: String(c?.id ?? "").trim(),
+      activity: String(c?.activity ?? "").trim(),
+      time: String(c?.time ?? c?.createdAt ?? "").trim(),
+      name: String(c?.name ?? c?.panelName ?? "").trim(),
+      _src: String(c?.source ?? c?._src ?? "").trim(),
+    }))
+    .filter((c) => c.id && c.activity);
+
+  setCards(normalized);
+  return normalized;
+}
 
   async function loadResult() {
     const sid = sidTrim;
@@ -190,7 +199,10 @@ export default function ClusterPage({ onBack }) {
       // 1) ambil cards dahulu (supaya boleh resolve cardIds -> activity)
       const cardList = await loadCards(sid);
       const map = {};
-      for (const c of cardList) map[String(c.id)] = c;
+      for (const c of cardList) {
+        const id = String(c?.id ?? "").trim();
+        if (id) map[id] = c;
+      }
 
       // 2) ambil cluster result
       const result = await apiGet(`/api/cluster/result/${encodeURIComponent(sid)}`);
