@@ -7,15 +7,13 @@ const API_BASE =
 /**
  * Ambil query param daripada:
  * 1) window.location.search  -> ?session=Office-v3
- * 2) window.location.hash    -> #/cp?session=Office-v3
+ * 2) window.location.hash    -> #/cp-dashboard?session=Office-v3
  */
 function getQueryParam(name) {
-  // 1) normal query: ?session=...
   const s = new URLSearchParams(window.location.search);
   const v1 = s.get(name);
   if (v1) return v1;
 
-  // 2) hash query: #/cp?session=...
   const h = window.location.hash || "";
   const qIndex = h.indexOf("?");
   if (qIndex === -1) return "";
@@ -24,12 +22,15 @@ function getQueryParam(name) {
   return hParams.get(name) || "";
 }
 
+function safeStr(x) {
+  return String(x ?? "").trim();
+}
+
 /**
- * Extractor CU list dari CPC JSON (kalis peluru, tetapi kita tetap LOCK ID ikut CPC).
+ * Extractor CU list dari CPC JSON (kalis peluru).
  */
 function extractCuList(cpc) {
   if (!cpc) return [];
-
   if (Array.isArray(cpc.cus)) return cpc.cus;
   if (Array.isArray(cpc.units)) return cpc.units;
   if (Array.isArray(cpc.competencyUnits)) return cpc.competencyUnits;
@@ -52,48 +53,90 @@ function extractCuList(cpc) {
 
 /**
  * LOCKED: CU Code mesti ikut CPC
- * Utama: cuCode (contoh: "c01")
- * Fallback (legacy): cuId/id/code (jika backend lama)
- * TIADA auto-generate "C01" lagi.
  */
 function getCuCodeCanonical(cu) {
-  return String(cu?.cuCode || cu?.cuId || cu?.id || cu?.code || "")
-    .trim()
-    .toLowerCase();
+  return safeStr(cu?.cuCode || cu?.cuId || cu?.id || cu?.code).toLowerCase();
 }
 
-/**
- * Tajuk CU (ikut CPC)
- */
 function getCuTitle(cu) {
-  return String(cu?.cuTitle || cu?.title || cu?.name || cu?.cuName || "").trim();
+  return safeStr(cu?.cuTitle || cu?.title || cu?.name || cu?.cuName);
 }
 
 function extractWaListFromCu(cu) {
-  // Dalam CPC anda: wa: [{ waCode, waTitle }]
   return cu?.wa || cu?.waList || cu?.workActivities || cu?.activities || cu?.was || [];
 }
 
-/**
- * LOCKED: WA ID MESTI ikut CPC
- * Utama: waCode (contoh: "w01")
- * Fallback (legacy): waId/id/code
- * TIADA auto-generate "W01" lagi.
- */
 function getWaIdCanonical(wa) {
-  return String(wa?.waCode || wa?.waId || wa?.id || wa?.code || "").trim();
+  return safeStr(wa?.waCode || wa?.waId || wa?.id || wa?.code).toLowerCase();
 }
 
 function getWaTitle(wa) {
-  return String(wa?.waTitle || wa?.title || wa?.name || wa?.text || "").trim();
+  return safeStr(wa?.waTitle || wa?.title || wa?.name || wa?.text);
+}
+
+function displayCode(code) {
+  return safeStr(code).toUpperCase();
+}
+
+function pad2(n) {
+  const x = Number(n) || 0;
+  return String(x).padStart(2, "0");
 }
 
 /**
- * Untuk paparan sahaja (cantik): "c01" -> "C01"
- * Jangan guna untuk hantar ke backend.
+ * Normalize draft yang balik dari backend (kalis peluru).
+ * Kita cuba cari: waItems -> ws[] -> pc
  */
-function displayCode(code) {
-  return String(code || "").trim().toUpperCase();
+function normalizeDraftFromApi(j, cuFromCpc) {
+  // Target struktur untuk UI:
+  // {
+  //   waItems: [
+  //     { waCode, waTitle, ws: [ { wsCode, wsTitle, pc } ] }
+  //   ]
+  // }
+
+  const out = { waItems: [] };
+
+  // 1) Cuba guna j.waItems / j.wa / j.items
+  const waItems =
+    (Array.isArray(j?.waItems) && j.waItems) ||
+    (Array.isArray(j?.wa) && j.wa) ||
+    (Array.isArray(j?.items) && j.items) ||
+    [];
+
+  if (waItems.length) {
+    out.waItems = waItems.map((w, wi) => {
+      const waCode = safeStr(w?.waCode || w?.code || w?.id || cuFromCpc?.wa?.[wi]?.waCode || `w${pad2(wi + 1)}`).toLowerCase();
+      const waTitle = safeStr(w?.waTitle || w?.title || w?.name || cuFromCpc?.wa?.[wi]?.waTitle || `WA ${wi + 1}`);
+
+      const wsArr =
+        (Array.isArray(w?.ws) && w.ws) ||
+        (Array.isArray(w?.workSteps) && w.workSteps) ||
+        (Array.isArray(w?.steps) && w.steps) ||
+        [];
+
+      const ws = wsArr.map((s, si) => ({
+        wsCode: safeStr(s?.wsCode || s?.code || `${wi + 1}.${si + 1}`),
+        wsTitle: safeStr(s?.wsTitle || s?.title || s?.text || "xxx"),
+        pc: safeStr(s?.pc || s?.performanceCriteria || s?.criteria || "xxx"),
+      }));
+
+      return { waCode, waTitle, ws };
+    });
+
+    return out;
+  }
+
+  // 2) Jika backend pulangkan flat wsList/pcList tanpa grouping WA
+  // fallback: bina dari CPC WA list, letak placeholder
+  const waFromCpc = extractWaListFromCu(cuFromCpc) || [];
+  out.waItems = waFromCpc.map((wa, wi) => ({
+    waCode: getWaIdCanonical(wa) || `w${pad2(wi + 1)}`,
+    waTitle: getWaTitle(wa) || `WA ${wi + 1}`,
+    ws: [], // nanti placeholder di UI
+  }));
+
+  return out;
 }
 
 export default function CpDashboard() {
@@ -103,6 +146,19 @@ export default function CpDashboard() {
   const [err, setErr] = useState("");
   const [busyCu, setBusyCu] = useState("");
   const [loading, setLoading] = useState(false);
+
+  // draftCache: { [cuCodeCanon]: { waItems:[...] , generatedAt } }
+  const [draftCache, setDraftCache] = useState({});
+
+  function goCpc() {
+    const sid = encodeURIComponent(safeStr(sessionId));
+    window.location.hash = `#/cpc?session=${sid}`;
+  }
+
+  function goCluster() {
+    const sid = encodeURIComponent(safeStr(sessionId));
+    window.location.hash = `#/cluster?session=${sid}`;
+  }
 
   async function loadCpc() {
     if (!sessionId) return;
@@ -121,65 +177,103 @@ export default function CpDashboard() {
     }
   }
 
+  // Load draftCache dari sessionStorage bila masuk page
+  useEffect(() => {
+    if (!sessionId) return;
+    try {
+      const prefix = `cpDraft:${sessionId}:`;
+      const out = {};
+      for (let i = 0; i < sessionStorage.length; i++) {
+        const k = sessionStorage.key(i);
+        if (!k || !k.startsWith(prefix)) continue;
+        const cuCode = k.slice(prefix.length);
+        const v = sessionStorage.getItem(k);
+        if (!v) continue;
+        out[cuCode] = JSON.parse(v);
+      }
+      setDraftCache(out);
+    } catch (e) {
+      // ignore
+    }
+  }, [sessionId]);
+
   /**
-   * Generate Draft CP
-   * LOCKED: Hantar cuCode (bukan auto-generate C01, bukan idx)
-   * Behaviour: POST draft -> simpan sessionStorage -> reload ke cp-editor
+   * AI Assisted: Generate WS+PC untuk semua WA dalam CU
+   * LOCKED: WA & CU kekal ikut CPC
+   * Rule:
+   * - minimum 3 WS per WA
+   * - 1 PC per WS
+   * - PC gaya "telah ..." (past tense, measurable)
    */
-  async function generateDraft(cuCode) {
-    const cuCodeCanon = String(cuCode || "").trim().toLowerCase();
-    if (!sessionId || !cuCodeCanon) {
-      setErr("CU Code tidak sah (tiada cuCode/cuId dalam CPC).");
+  async function generateWsPcForCu(cuCodeCanon) {
+    const cuCode = safeStr(cuCodeCanon).toLowerCase();
+    if (!sessionId || !cuCode) {
+      setErr("CU Code tidak sah.");
       return;
     }
 
-    setBusyCu(cuCodeCanon);
+    setBusyCu(cuCode);
     setErr("");
 
     try {
-      // Cari CU berdasarkan CPC (kalis peluru ikut extractCuList)
       const cuArr = extractCuList(cpc);
-      const cu = (cuArr || []).find((x) => getCuCodeCanonical(x) === cuCodeCanon);
+      const cu = (cuArr || []).find((x) => getCuCodeCanonical(x) === cuCode);
       if (!cu) throw new Error("CU tidak ditemui dalam CPC.");
 
       const cuTitle = getCuTitle(cu);
       const waObjs = extractWaListFromCu(cu) || [];
-      const waList = waObjs.map(getWaTitle).map((s) => String(s || "").trim()).filter(Boolean);
 
-      // 1) Jana draft di backend
+      // WA LOCKED: hantar sebagai objek (code+title) supaya backend boleh kekalkan ID
+      const waList = waObjs
+        .map((w) => ({
+          waCode: getWaIdCanonical(w), // contoh "w01"
+          waTitle: getWaTitle(w),
+        }))
+        .filter((w) => w.waCode && w.waTitle);
+
+      if (!waList.length) throw new Error("Tiada WA ditemui untuk CU ini (CPC).");
+
+      // Panggil backend (anda boleh kekalkan endpoint sama /api/cp/draft)
+      // Tambah parameter AI rules (backend boleh guna/ignore sementara).
       const r = await fetch(`${API_BASE}/api/cp/draft`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           sessionId,
-          cuCode: cuCodeCanon,
+          cuCode,
           cuTitle,
           waList,
+          ai: {
+            wsMin: 3,
+            pcPerWs: 1,
+            pcStyle: "past_tense_ms", // "telah ...", measurable
+            language: "MS",
+            measurable: true,
+          },
         }),
       });
 
       const j = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(j?.error || "Gagal jana draft CP");
+      if (!r.ok) throw new Error(j?.error || "Gagal jana WS/PC (AI Assisted).");
 
-      // 2) Simpan draft (optional) untuk CpEditor load cepat
+      const normalized = normalizeDraftFromApi(j, cu);
+
+      const payloadToStore = {
+        sessionId,
+        cuCode,
+        cuTitle,
+        ...normalized,
+        generatedAt: new Date().toISOString(),
+      };
+
+      // cache state
+      setDraftCache((prev) => ({ ...prev, [cuCode]: payloadToStore }));
+
+      // sessionStorage
       try {
-        sessionStorage.setItem(
-          `cpDraft:${sessionId}:${cuCodeCanon}`,
-          JSON.stringify({
-            sessionId,
-            cuCode: cuCodeCanon,
-            cuTitle,
-            waList,
-            ...j,
-            generatedAt: new Date().toISOString(),
-          })
-        );
+        sessionStorage.setItem(`cpDraft:${sessionId}:${cuCode}`, JSON.stringify(payloadToStore));
       } catch (e) {}
 
-      // 3) Pergi ke editor (FULL reload - paling pasti)
-      window.location.href = `/#/cp-editor?session=${encodeURIComponent(
-        sessionId
-      )}&cu=${encodeURIComponent(cuCodeCanon)}&fromDraft=1`;
     } catch (e) {
       console.error(e);
       setErr(String(e?.message || e));
@@ -188,15 +282,13 @@ export default function CpDashboard() {
     }
   }
 
-  function goEdit(cuCode) {
-    const cuCodeCanon = String(cuCode || "").trim().toLowerCase();
-    if (!sessionId || !cuCodeCanon) {
-      setErr("CU Code tidak sah (tiada cuCode/cuId dalam CPC).");
+  function goEdit(cuCodeCanon) {
+    const cuCode = safeStr(cuCodeCanon).toLowerCase();
+    if (!sessionId || !cuCode) {
+      setErr("CU Code tidak sah.");
       return;
     }
-    window.location.href = `/#/cp-editor?session=${encodeURIComponent(
-      sessionId
-    )}&cu=${encodeURIComponent(cuCodeCanon)}`;
+    window.location.href = `/#/cp-editor?session=${encodeURIComponent(sessionId)}&cu=${encodeURIComponent(cuCode)}`;
   }
 
   useEffect(() => {
@@ -215,18 +307,12 @@ export default function CpDashboard() {
 
   const cuListRaw = useMemo(() => extractCuList(cpc), [cpc]);
 
-  // Normalise CU list: pastikan setiap CU ada cuCodeCanonical (jika tiada, kita tanda invalid)
   const cuList = useMemo(() => {
     return (cuListRaw || []).map((cu) => {
       const cuCodeCanon = getCuCodeCanonical(cu);
       const cuTitle = getCuTitle(cu);
       const waList = extractWaListFromCu(cu) || [];
-      return {
-        _raw: cu,
-        cuCodeCanon,
-        cuTitle,
-        waList,
-      };
+      return { _raw: cu, cuCodeCanon, cuTitle, waList };
     });
   }, [cuListRaw]);
 
@@ -234,7 +320,42 @@ export default function CpDashboard() {
 
   return (
     <div style={{ padding: 16, fontFamily: "Arial, sans-serif" }}>
+      <style>{`
+        .topbar{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:10px 0 14px; }
+        .btn{ border:1px solid #222; background:#f5f5f5; padding:6px 10px; border-radius:6px; cursor:pointer; }
+        .btn:hover{ background:#eee; }
+        .btn:disabled{ opacity:.6; cursor:not-allowed; }
+        .card{ border:1px solid #ddd; border-radius:10px; padding:12px; margin-bottom:14px; max-width: 980px; background:#fff; }
+        .cuHeader{ display:flex; justify-content:space-between; gap:10px; align-items:flex-start; }
+        .cuTitle{ font-weight:700; font-size:16px; }
+        .muted{ font-size:12px; opacity:.75; margin-top:4px; }
+        .tableWrap{ margin-top:10px; overflow:auto; }
+        table.cp{ width:100%; border-collapse:collapse; min-width: 860px; }
+        table.cp th, table.cp td{ border:1px solid #222; padding:10px; vertical-align:top; }
+        table.cp th{ background:#dedede; text-align:center; font-weight:700; }
+        .waCell{ width:32%; }
+        .wsCell{ width:34%; }
+        .pcCell{ width:34%; }
+        .li{ margin:0; padding-left:18px; }
+        .li li{ margin:0 0 4px 0; }
+        .warn{ border:1px solid #f5c2c7; background:#f8d7da; color:#842029; padding:10px; border-radius:10px; max-width: 980px; margin-bottom:12px; font-size:13px;}
+        .err{ color:crimson; margin-top:10px; }
+
+        @media print{
+          .topbar, .noPrint { display:none !important; }
+          @page { size: A4 landscape; margin: 10mm; }
+          table.cp { min-width: unset; }
+          .card{ border:none; padding:0; }
+        }
+      `}</style>
+
       <h2>CP Dashboard</h2>
+
+      <div className="topbar noPrint">
+        <button className="btn" onClick={goCluster} disabled={!sessionId}>← Ke Cluster</button>
+        <button className="btn" onClick={goCpc} disabled={!sessionId}>Lihat CPC</button>
+        <button className="btn" onClick={() => window.print()} disabled={!sessionId}>Print (CP Table)</button>
+      </div>
 
       <div style={{ marginBottom: 8 }}>
         <b>Session:</b> {sessionId || <i>(tiada)</i>}
@@ -245,26 +366,23 @@ export default function CpDashboard() {
       </div>
 
       {!sessionId && (
-        <div style={{ color: "crimson", marginTop: 8 }}>
+        <div className="err">
           Sila buka dengan URL:
           <div style={{ marginTop: 6 }}>
-            <code>/#/cp?session=Office-v3</code>
+            <code>/#/cp-dashboard?session=Office-v3</code>
           </div>
         </div>
       )}
 
-      {err && <div style={{ color: "crimson", marginTop: 10 }}>{err}</div>}
+      {err && <div className="err">{err}</div>}
 
-      {sessionId && (loading || (!cpc && !err)) && (
-        <div style={{ marginTop: 12 }}>Loading CPC...</div>
-      )}
+      {sessionId && (loading || (!cpc && !err)) && <div style={{ marginTop: 12 }}>Loading CPC...</div>}
 
       {cpc && !cuListRaw?.length && (
-        <div style={{ marginTop: 12, color: "crimson" }}>
+        <div className="err">
           CPC berjaya dimuat (200 OK) tetapi senarai CU tidak ditemui dalam struktur data.
           <div style={{ fontSize: 13, opacity: 0.85, marginTop: 6 }}>
-            Semak response <code>/api/cpc/{`{sessionId}`}</code> — pastikan CU berada dalam{" "}
-            <code>units</code> atau <code>cus</code>.
+            Semak response <code>/api/cpc/{`{sessionId}`}</code> — pastikan CU berada dalam <code>cus</code>.
           </div>
         </div>
       )}
@@ -274,20 +392,8 @@ export default function CpDashboard() {
           <h3 style={{ margin: "12px 0" }}>Senarai CU (diambil terus dari CPC)</h3>
 
           {hasInvalidCu && (
-            <div
-              style={{
-                border: "1px solid #f5c2c7",
-                background: "#f8d7da",
-                color: "#842029",
-                padding: 10,
-                borderRadius: 10,
-                maxWidth: 860,
-                marginBottom: 12,
-                fontSize: 13,
-              }}
-            >
-              Ada CU yang <b>tiada</b> <code>cuCode</code>/<code>cuId</code> dalam CPC. Sistem{" "}
-              <b>tidak</b> akan auto-generate ID kerana kita lock “ikut CPC”.
+            <div className="warn">
+              Ada CU yang <b>tiada</b> <code>cuCode</code>/<code>cuId</code> dalam CPC. Sistem <b>tidak</b> akan auto-generate ID.
             </div>
           )}
 
@@ -296,46 +402,52 @@ export default function CpDashboard() {
             const cuTitle = item.cuTitle;
             const waList = item.waList || [];
             const isInvalid = !cuCodeCanon;
-
-            // untuk paparan cantik sahaja
             const cuDisplay = displayCode(cuCodeCanon) || `(CU#${idx + 1} tiada ID)`;
 
+            const draft = cuCodeCanon ? draftCache[cuCodeCanon] : null;
+
+            // Jika tiada draft, kita render WA sahaja + placeholder WS/PC
+            // Jika ada draft, kita render jadual lengkap berdasarkan draft.waItems
+            const waItemsForTable = (() => {
+              if (draft?.waItems?.length) return draft.waItems;
+
+              // fallback dari CPC
+              return waList.map((wa, wi) => ({
+                waCode: getWaIdCanonical(wa) || `w${pad2(wi + 1)}`,
+                waTitle: getWaTitle(wa) || `WA ${wi + 1}`,
+                ws: [], // akan dipapar placeholder
+              }));
+            })();
+
             return (
-              <div
-                key={cuCodeCanon || `cu-${idx}`}
-                style={{
-                  border: "1px solid #ddd",
-                  borderRadius: 10,
-                  padding: 12,
-                  marginBottom: 12,
-                  maxWidth: 860,
-                  background: "#fff",
-                  opacity: isInvalid ? 0.85 : 1,
-                }}
-              >
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+              <div className="card" key={cuCodeCanon || `cu-${idx}`}>
+                <div className="cuHeader">
                   <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: "bold", fontSize: 15 }}>
+                    <div className="cuTitle">
                       {cuDisplay}: {cuTitle || <span style={{ opacity: 0.7 }}>(tiada tajuk)</span>}
                     </div>
 
-                    <div style={{ fontSize: 12, opacity: 0.75, marginTop: 4 }}>
+                    <div className="muted">
                       <b>CU Code (CPC):</b>{" "}
-                      {cuCodeCanon ? (
-                        <code>{cuCodeCanon}</code>
+                      {cuCodeCanon ? <code>{cuCodeCanon}</code> : <span style={{ color: "crimson" }}>tiada</span>}
+                      {"  "} | {" "}
+                      <b>WA dalam CPC:</b> {waList.length}
+                      {draft?.generatedAt ? (
+                        <>
+                          {" "} | <b>Draft:</b> <span>✅ Ada</span> <span style={{ opacity: 0.8 }}>({new Date(draft.generatedAt).toLocaleString("ms-MY")})</span>
+                        </>
                       ) : (
-                        <span style={{ color: "crimson" }}>tiada (wajib ada cuCode/cuId)</span>
+                        <>
+                          {" "} | <b>Draft:</b> <span>❌ Belum</span>
+                        </>
                       )}
-                    </div>
-
-                    <div style={{ fontSize: 13, opacity: 0.8, marginTop: 4 }}>
-                      WA dalam CPC: {waList.length}
                     </div>
                   </div>
 
                   <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                     <button
-                      disabled={isInvalid || busyCu === cuCodeCanon}
+                      className="btn"
+                      disabled={isInvalid}
                       onClick={() => goEdit(cuCodeCanon)}
                       title={isInvalid ? "CU tiada cuCode/cuId dalam CPC" : ""}
                     >
@@ -343,55 +455,80 @@ export default function CpDashboard() {
                     </button>
 
                     <button
+                      className="btn"
                       disabled={isInvalid || busyCu === cuCodeCanon}
-                      onClick={() => generateDraft(cuCodeCanon)}
+                      onClick={() => generateWsPcForCu(cuCodeCanon)}
                       title={isInvalid ? "CU tiada cuCode/cuId dalam CPC" : ""}
                     >
-                      {busyCu === cuCodeCanon ? "Generating..." : "Generate Draft"}
+                      {busyCu === cuCodeCanon ? "Generating..." : "AI Generate WS/PC"}
                     </button>
                   </div>
                 </div>
 
-                {/* Papar WA list (ikut CPC) */}
-                {waList.length ? (
-                  <div style={{ marginTop: 10 }}>
-                    <div style={{ fontSize: 13, fontWeight: "bold", marginBottom: 6 }}>
-                      Work Activities (WA) — ikut CPC
-                    </div>
-                    <ul style={{ margin: 0, paddingLeft: 18 }}>
-                      {waList.map((wa, wIdx) => {
-                        const waIdCanon = getWaIdCanonical(wa);
-                        const waTitle = getWaTitle(wa);
-                        const waDisplay = displayCode(waIdCanon) || `(WA#${wIdx + 1} tiada ID)`;
-                        const waInvalid = !waIdCanon;
+                <div className="tableWrap">
+                  <table className="cp">
+                    <thead>
+                      <tr>
+                        <th className="waCell">WORK ACTIVITIES (WA)</th>
+                        <th className="wsCell">WORK STEP (WS)</th>
+                        <th className="pcCell">PERFORMANCE CRITERIA (PC)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {waItemsForTable.map((w, wi) => {
+                        const waNo = wi + 1;
+                        const waTitle = safeStr(w?.waTitle);
+                        const wsArr = Array.isArray(w?.ws) ? w.ws : [];
+
+                        // Placeholder bila backend belum supply WS/PC
+                        const wsToShow = wsArr.length
+                          ? wsArr
+                          : [
+                              { wsCode: `${waNo}.1`, wsTitle: "xxx", pc: "xxx" },
+                              { wsCode: `${waNo}.2`, wsTitle: "xxx", pc: "xxx" },
+                              { wsCode: `${waNo}.3`, wsTitle: "xxx", pc: "xxx" },
+                            ];
 
                         return (
-                          <li
-                            key={`${cuCodeCanon || idx}-${waIdCanon || `wa-${wIdx}`}`}
-                            style={{ marginBottom: 4 }}
-                          >
-                            <b>{waDisplay}</b> —{" "}
-                            {waTitle || <span style={{ opacity: 0.7 }}>(tiada tajuk)</span>}
-                            {waInvalid && (
-                              <span style={{ marginLeft: 8, color: "crimson", fontSize: 12 }}>
-                                (tiada waCode/waId dalam CPC)
-                              </span>
-                            )}
-                            {!waInvalid && (
-                              <span style={{ marginLeft: 8, opacity: 0.7, fontSize: 12 }}>
-                                <code>{waIdCanon}</code>
-                              </span>
-                            )}
-                          </li>
+                          <tr key={`${cuCodeCanon || idx}-wa-${wi}`}>
+                            <td className="waCell">
+                              <div style={{ fontWeight: 700 }}>
+                                {waNo}. {waTitle || "(tiada tajuk)"}
+                              </div>
+                              <div style={{ fontSize: 12, opacity: 0.75, marginTop: 4 }}>
+                                WA Code: <code>{safeStr(w?.waCode)}</code>
+                              </div>
+                            </td>
+
+                            <td className="wsCell">
+                              <ul className="li">
+                                {wsToShow.map((s, si) => (
+                                  <li key={`ws-${wi}-${si}`}>
+                                    <b>{safeStr(s.wsCode) || `${waNo}.${si + 1}`}</b> {safeStr(s.wsTitle) || "xxx"}
+                                  </li>
+                                ))}
+                              </ul>
+                            </td>
+
+                            <td className="pcCell">
+                              <ul className="li">
+                                {wsToShow.map((s, si) => (
+                                  <li key={`pc-${wi}-${si}`}>
+                                    <b>{safeStr(s.wsCode) || `${waNo}.${si + 1}`}</b> {safeStr(s.pc) || "xxx"}
+                                  </li>
+                                ))}
+                              </ul>
+                            </td>
+                          </tr>
                         );
                       })}
-                    </ul>
-                  </div>
-                ) : (
-                  <div style={{ marginTop: 10, fontSize: 13, opacity: 0.75 }}>
-                    (Tiada WA ditemui pada CU ini dalam CPC JSON.)
-                  </div>
-                )}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div style={{ marginTop: 8, fontSize: 12, opacity: 0.7 }}>
+                  *Nota AI Assisted: WA & CU dikunci ikut CPC. AI jana minimum 3 WS/WA, dan 1 PC/WS (ayat “telah …” yang boleh diukur).
+                </div>
               </div>
             );
           })}
