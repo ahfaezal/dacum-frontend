@@ -71,19 +71,34 @@ async function apiPost(path, body) {
 function normId(v) {
   if (v === null || v === undefined) return "";
   const s = String(v).trim();
-  // elak "null", "undefined" jadi id
   if (s === "null" || s === "undefined") return "";
   return s;
 }
 
-function normalizeClustersFromResult(result, cardsById) {
+function normalizeClustersFromResult(result, cardsById, cardsList) {
   const rawClusters = Array.isArray(result?.clusters) ? result.clusters : [];
+  const list = Array.isArray(cardsList) ? cardsList : [];
 
-  const getCardById = (id) => {
-    const k = normId(id);
+  const getCard = (rawId) => {
+    const k = normId(rawId);
     if (!k) return null;
-    // Object key access (JS akan stringify, tapi kita normalise dulu)
-    return cardsById?.[k] ?? null;
+
+    // 1) cuba match terus pada id (UUID)
+    const byId = cardsById?.[k];
+    if (byId) return byId;
+
+    // 2) fallback: kalau id nampak nombor, cuba sebagai index
+    //    (boleh jadi 0-based atau 1-based)
+    const n = Number(k);
+    if (Number.isFinite(n)) {
+      const i0 = Math.trunc(n);     // 0-based
+      const i1 = Math.trunc(n) - 1; // 1-based
+
+      if (list[i0]) return list[i0];
+      if (list[i1]) return list[i1];
+    }
+
+    return null;
   };
 
   const clusters = rawClusters.map((c, idx) => {
@@ -91,19 +106,13 @@ function normalizeClustersFromResult(result, cardsById) {
     const title = String(c?.title || c?.name || `Cluster ${idx + 1}`);
 
     const cardIds = Array.isArray(c?.cardIds) ? c.cardIds : [];
-
     const items = cardIds
-      .map((id) => normId(id))          // normalise
-      .filter((id) => !!id)             // buang null/empty
+      .map((id) => normId(id))
+      .filter(Boolean) // buang null/empty
       .map((id) => {
-        const card = getCardById(id);
+        const card = getCard(id);
         if (card) return card;
-        return {
-          id,
-          activity: `(Kad tidak dijumpai: ${id})`,
-          time: "",
-          _src: "missing",
-        };
+        return { id, activity: `(Kad tidak dijumpai: ${id})`, time: "", _src: "missing" };
       });
 
     return { id: cid, title, items };
@@ -112,9 +121,9 @@ function normalizeClustersFromResult(result, cardsById) {
   const unassignedIds = Array.isArray(result?.unassigned) ? result.unassigned : [];
   const unassigned = unassignedIds
     .map((id) => normId(id))
-    .filter((id) => !!id)
+    .filter(Boolean)
     .map((id) => {
-      const card = getCardById(id);
+      const card = getCard(id);
       if (card) return card;
       return { id, activity: `(Kad tidak dijumpai: ${id})`, time: "", _src: "missing" };
     });
@@ -188,7 +197,7 @@ export default function ClusterPage({ onBack }) {
       setClusterResult(result);
 
       const { clusters: normClusters, unassigned: normUnassigned } =
-        normalizeClustersFromResult(result, map);
+        normalizeClustersFromResult(result, map, cards);
 
       setClusters(normClusters);
       setUnassigned(normUnassigned);
