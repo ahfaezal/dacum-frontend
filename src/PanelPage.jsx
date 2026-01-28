@@ -34,12 +34,13 @@ export default function PanelPage() {
     }
     setBusy(true);
     try {
-      const r = await fetch(
-        `${apiBase}/api/panel/list/${encodeURIComponent(sid)}`
-      );
-      const j = await r.json();
-      if (!r.ok || !j?.ok) throw new Error(j?.error || "Gagal load data");
-      setItems(Array.isArray(j.items) ? j.items : []);
+  const r = await fetch(
+    `${apiBase}/api/liveboard/${encodeURIComponent(sid)}`
+  );
+  const j = await r.json();
+  if (!r.ok || !j?.ok) throw new Error(j?.error || "Gagal load data");
+
+  setItems(Array.isArray(j?.data?.cards) ? j.data.cards : []);
     } catch (e) {
       // biar senyap supaya UI tak ganggu panel
       console.error(e);
@@ -74,11 +75,18 @@ export default function PanelPage() {
 
     setSending(true);
     try {
-      const r = await fetch(`${apiBase}/api/panel/submit`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId: sid, panelName: pn, text: tx }),
-      });
+      const r = await fetch(
+        `${apiBase}/api/liveboard/${encodeURIComponent(sid)}/append`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            panelName: pn,
+            activity: tx,
+          }),
+        }
+      );
+
       const j = await r.json();
       if (!r.ok || !j?.ok) throw new Error(j?.error || "Gagal submit");
 
