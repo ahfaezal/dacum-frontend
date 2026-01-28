@@ -1,405 +1,387 @@
-import React, { useEffect, useState } from "react";
-
-/**
- * CpcPage.jsx (Lengkap)
- * - Screen view: CPC grid sedia ada (mesra bengkel)
- * - Print view (JPK style): header table + bar + TERAS menegak + CU/WA box seperti contoh gambar
- *
- * Nota:
- * - Maklumat header JPK (Seksyen/Kumpulan/Bidang/Tajuk/Tahap/Kod) buat masa ini HARD-CODE.
- *   Nanti kita boleh jadikan dynamic dari backend.
- */
+import React, { useEffect, useMemo, useState } from "react";
 
 const API_BASE =
   (import.meta?.env?.VITE_API_BASE && String(import.meta.env.VITE_API_BASE)) ||
   "https://dacum-backend.onrender.com";
 
+/**
+ * Ambil query param daripada:
+ * 1) window.location.search  -> ?session=Office-v3
+ * 2) window.location.hash    -> #/cpc?session=Office-v3
+ */
+function getQueryParam(name) {
+  const s = new URLSearchParams(window.location.search);
+  const v1 = s.get(name);
+  if (v1) return v1;
+
+  const h = window.location.hash || "";
+  const qIndex = h.indexOf("?");
+  if (qIndex === -1) return "";
+  const qs = h.slice(qIndex + 1);
+  const p = new URLSearchParams(qs);
+  return p.get(name) || "";
+}
+
+function pad2(n) {
+  const x = Number(n) || 0;
+  return String(x).padStart(2, "0");
+}
+
+function safeStr(x) {
+  return String(x ?? "").trim();
+}
+
+/**
+ * Normalizer:
+ * Cuba terima pelbagai bentuk payload:
+ * - { ok, sessionId, lang, generatedAt, blocks:[{cuTitle, activities:[{waTitle}]}] }
+ * - { cus:[{cuTitle, activities:[{waTitle}]}] }
+ * - [{ cuTitle, activities:[{waTitle}]}]
+ * - { teras:[{ cus:[...] }]}  (kalau ada TERAS)
+ */
+function normalizeCpcPayload(payload, fallback = {}) {
+  const nowIso = new Date().toISOString();
+
+  // default
+  let sessionId = safeStr(payload?.sessionId) || safeStr(fallback.sessionId) || "";
+  let lang = safeStr(payload?.lang) || safeStr(fallback.lang) || "MS";
+  let generatedAt = payload?.generatedAt || payload?.generated || nowIso;
+
+  // 1) If already has teras blocks
+  if (Array.isArray(payload?.teras) && payload.teras.length) {
+    // Flatten teras->cus
+    const cus = payload.teras
+      .flatMap((t) => (Array.isArray(t?.cus) ? t.cus : []))
+      .filter(Boolean);
+    return {
+      sessionId,
+      lang,
+      generatedAt,
+      cus: cus.map((c, idx) => ({
+        cuTitle: safeStr(c?.cuTitle || c?.title || c?.name || `CU-${pad2(idx + 1)}`),
+        activities: (Array.isArray(c?.activities) ? c.activities : Array.isArray(c?.was) ? c.was : [])
+          .filter(Boolean)
+          .map((a, j) => ({
+            waTitle: safeStr(a?.waTitle || a?.title || a?.name || `Aktiviti ${j + 1}`),
+          })),
+      })),
+    };
+  }
+
+  // 2) If payload has cus
+  if (Array.isArray(payload?.cus)) {
+    return {
+      sessionId,
+      lang,
+      generatedAt,
+      cus: payload.cus.map((c, idx) => ({
+        cuTitle: safeStr(c?.cuTitle || c?.title || c?.name || `CU-${pad2(idx + 1)}`),
+        activities: (Array.isArray(c?.activities) ? c.activities : Array.isArray(c?.was) ? c.was : [])
+          .filter(Boolean)
+          .map((a, j) => ({
+            waTitle: safeStr(a?.waTitle || a?.title || a?.name || `Aktiviti ${j + 1}`),
+          })),
+      })),
+    };
+  }
+
+  // 3) If payload itself is array of CU
+  if (Array.isArray(payload)) {
+    return {
+      sessionId,
+      lang,
+      generatedAt,
+      cus: payload.map((c, idx) => ({
+        cuTitle: safeStr(c?.cuTitle || c?.title || c?.name || `CU-${pad2(idx + 1)}`),
+        activities: (Array.isArray(c?.activities) ? c.activities : Array.isArray(c?.was) ? c.was : [])
+          .filter(Boolean)
+          .map((a, j) => ({
+            waTitle: safeStr(a?.waTitle || a?.title || a?.name || `Aktiviti ${j + 1}`),
+          })),
+      })),
+    };
+  }
+
+  // 4) If payload has "blocks" or "items"
+  const maybeCus =
+    (Array.isArray(payload?.blocks) && payload.blocks) ||
+    (Array.isArray(payload?.items) && payload.items) ||
+    [];
+
+  if (Array.isArray(maybeCus) && maybeCus.length) {
+    return {
+      sessionId,
+      lang,
+      generatedAt,
+      cus: maybeCus.map((c, idx) => ({
+        cuTitle: safeStr(c?.cuTitle || c?.title || c?.name || `CU-${pad2(idx + 1)}`),
+        activities: (Array.isArray(c?.activities) ? c.activities : Array.isArray(c?.was) ? c.was : [])
+          .filter(Boolean)
+          .map((a, j) => ({
+            waTitle: safeStr(a?.waTitle || a?.title || a?.name || `Aktiviti ${j + 1}`),
+          })),
+      })),
+    };
+  }
+
+  // 5) fallback empty
+  return { sessionId, lang, generatedAt, cus: [] };
+}
+
 export default function CpcPage() {
-  const url = new URL(window.location.href);
-  const sessionId = url.searchParams.get("session") || "Masjid";
-
-  const [data, setData] = useState(null);
-  const [err, setErr] = useState("");
+  const [sessionId, setSessionId] = useState(() => getQueryParam("session") || getQueryParam("sessionId") || "");
   const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState("");
+  const [raw, setRaw] = useState(null);
 
-  // UX untuk screen
-  const [compact, setCompact] = useState(false);
-  const [freeze, setFreeze] = useState(true);
+  useEffect(() => {
+    // update if url changes
+    const onPop = () => {
+      const sid = getQueryParam("session") || getQueryParam("sessionId") || "";
+      setSessionId(sid);
+    };
+    window.addEventListener("popstate", onPop);
+    window.addEventListener("hashchange", onPop);
+    return () => {
+      window.removeEventListener("popstate", onPop);
+      window.removeEventListener("hashchange", onPop);
+    };
+  }, []);
 
-  async function load() {
-    setLoading(true);
-    setErr("");
-    try {
-      const r = await fetch(
-        `${API_BASE}/api/cpc/${encodeURIComponent(sessionId)}`
-      );
-      const j = await r.json();
-      if (!r.ok) throw new Error(j?.error || "Gagal load CPC");
-      setData(j);
-    } catch (e) {
-      setErr(String(e?.message || e));
-    } finally {
-      setLoading(false);
+  async function fetchCpc(sid) {
+    const url = `${API_BASE}/api/cpc/${encodeURIComponent(sid)}`;
+    const r = await fetch(url, { method: "GET" });
+    if (!r.ok) {
+      const t = await r.text().catch(() => "");
+      throw new Error(t || `HTTP ${r.status}`);
     }
+    return r.json();
   }
 
   useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (!safeStr(sessionId)) return;
+    let alive = true;
+    setLoading(true);
+    setErr("");
+    setRaw(null);
+
+    fetchCpc(sessionId)
+      .then((data) => {
+        if (!alive) return;
+        setRaw(data);
+      })
+      .catch((e) => {
+        if (!alive) return;
+        setErr(e?.message || "Gagal ambil data CPC");
+      })
+      .finally(() => {
+        if (!alive) return;
+        setLoading(false);
+      });
+
+    return () => {
+      alive = false;
+    };
   }, [sessionId]);
 
-  if (loading) return <div style={{ padding: 16 }}>Loading CPC...</div>;
-  if (err) return <div style={{ padding: 16, color: "crimson" }}>{err}</div>;
-  if (!data) return <div style={{ padding: 16 }}>Tiada data.</div>;
+  const model = useMemo(() => {
+    return normalizeCpcPayload(raw, { sessionId, lang: "MS" });
+  }, [raw, sessionId]);
 
-  // Normalisasi
-  const teras = (data.teras && data.teras[0]) || {};
-  const units = Array.isArray(data.units) ? data.units : [];
+  const generatedHuman = useMemo(() => {
+    try {
+      const d = new Date(model.generatedAt);
+      if (Number.isNaN(d.getTime())) return safeStr(model.generatedAt);
+      return d.toLocaleString("ms-MY");
+    } catch {
+      return safeStr(model.generatedAt);
+    }
+  }, [model.generatedAt]);
 
-  // ====== HEADER JPK (hardcode dulu) ======
-  // Ubah ikut kehendak Prof.
-  const JPK = {
-    seksyen: "(P) PENDIDIKAN",
-    kumpulan: "(853) PENDIDIKAN TINGGI",
-    bidang: "AKADEMIK",
-    tajukNoss: "PENTADBIRAN PEJABAT",
-    tahap: "TIGA (3)",
-    kodNoss: "NOSS-XXX-3:2026",
-  };
+  const title = "Carta Profil Kompetensi (CPC)";
+
+  const printNow = () => window.print();
 
   return (
-    <>
+    <div className="cpc-root">
       <style>{`
-@media print {
-  @page { size: A4 landscape; margin: 8mm; }
-  body { margin: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        :root{
+          --cpc-green:#8ad17a;
+          --cpc-blue:#cfe9ff;
+          --cpc-border:#2f2f2f;
+          --muted:#555;
+        }
+        .cpc-root{ padding: 12px; font-family: Arial, Helvetica, sans-serif; }
+        .cpc-topbar{
+          display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+          margin-bottom: 8px;
+        }
+        .btn{
+          border:1px solid #222; background:#f5f5f5; padding:6px 10px; cursor:pointer;
+          border-radius:4px; font-size: 13px;
+        }
+        .btn:hover{ background:#eee; }
+        .badge{ font-size:13px; color:#111; }
+        .badge span{ color: var(--muted); }
+        .header{
+          border:1px solid var(--cpc-border);
+          padding:10px 12px;
+          margin-bottom:10px;
+          background:#fff;
+        }
+        .header h1{
+          font-size: 24px; margin:0 0 6px 0; font-weight:700;
+        }
+        .meta{
+          display:flex; gap:14px; flex-wrap:wrap; font-size:13px;
+        }
+        .meta b{ font-weight:700; }
+        .meta .muted{ color: var(--muted); }
+        .divider{ height:1px; background:#ddd; margin:10px 0; }
 
-  .no-print { display: none !important; }
-  .print-only { display: block !important; }
-  .screen-only { display: none !important; }
-}
+        .section{
+          border:1px solid var(--cpc-border);
+          margin-bottom:12px;
+          break-inside: avoid;
+          page-break-inside: avoid;
+        }
+        .section-title{
+          background: var(--cpc-green);
+          border-bottom:1px solid var(--cpc-border);
+          padding:10px 12px;
+          font-size:16px;
+          font-weight:700;
+        }
+        .wa-grid{
+          display:grid;
+          grid-template-columns: repeat(5, minmax(160px, 1fr));
+          gap:10px;
+          padding:10px;
+        }
+        .wa-box{
+          background: var(--cpc-blue);
+          border:1px solid var(--cpc-border);
+          padding:10px 10px;
+          min-height:72px;
+        }
+        .wa-code{
+          font-weight:700;
+          margin-bottom:6px;
+          font-size:14px;
+        }
+        .wa-title{
+          font-size:13px;
+          line-height:1.25;
+        }
 
-@media screen {
-  .print-only { display: none; }
-  .screen-only { display: block; }
-}
+        .empty{
+          padding: 12px;
+          color: #333;
+          font-size: 14px;
+        }
+        .error{
+          color:#b00020; border:1px solid #b00020; background:#fff0f1;
+          padding:10px 12px; border-radius:6px; margin-bottom:10px;
+        }
 
-/* =========================
-   PRINT (JPK STYLE)
-   ========================= */
-.jpk-header-table{
-  width:100%;
-  border-collapse:collapse;
-  font-size:12px;
-}
-.jpk-header-table td{
-  border:1px solid #000;
-  padding:3px 6px;
-  vertical-align:top;
-}
-.jpk-bar{
-  width:100%;
-  border:1px solid #000;
-  background:#e6f3f8;
-  padding:3px 6px;
-  font-weight:700;
-  text-align:center;
-  font-size:12px;
-}
-.jpk-page-title{
-  font-weight:700;
-  font-size:18px;
-  margin:0 0 6px 0;
-}
-.jpk-layout{
-  display:grid;
-  grid-template-columns: 46px 260px 1fr;
-  gap:8px;
-}
-.jpk-teras-vertical{
-  border:1px solid #000;
-  background:#f2c94c;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  font-weight:700;
-  writing-mode: vertical-rl;
-  transform: rotate(180deg);
-}
-.jpk-cu-box{
-  border:1px solid #000;
-  background:#b7e08a;
-  display:flex;
-  flex-direction:column;
-  min-height:118px;
-}
-.jpk-cu-title{
-  padding:10px;
-  font-weight:700;
-  text-align:center;
-  line-height:1.2;
-  flex:1;
-}
-.jpk-cu-code{
-  border-top:1px solid #000;
-  background:#8fd06f;
-  padding:4px 6px;
-  text-align:center;
-  font-weight:700;
-  font-size:12px;
-}
-.jpk-wa-grid{
-  display:grid;
-  grid-template-columns: repeat(4, minmax(170px, 1fr));
-  gap:8px;
-  align-content:start;
-}
-.jpk-wa-box{
-  border:1px solid #000;
-  background:#fff;
-  min-height:118px;
-  display:flex;
-  flex-direction:column;
-}
-.jpk-wa-title{
-  padding:10px;
-  font-weight:600;
-  text-align:center;
-  line-height:1.2;
-  flex:1;
-}
-.jpk-wa-code{
-  border-top:1px solid #000;
-  background:#d6eefc;
-  padding:4px 6px;
-  text-align:center;
-  font-weight:700;
-  font-size:12px;
-}
+        /* Print */
+        @media print{
+          .cpc-topbar{ display:none !important; }
+          .cpc-root{ padding: 0; }
+          .header{ border: none; padding: 0 0 8px 0; }
+          .section{ break-inside: avoid; page-break-inside: avoid; }
+          @page { size: A4 landscape; margin: 10mm; }
+          a[href]:after { content: "" !important; }
+        }
 
-/* =========================
-   SCREEN VIEW (current)
-   ========================= */
-.screen-wrap{
-  padding:16px;
-  font-family: Georgia, serif;
-}
-`}</style>
+        /* Responsive fallback (screen kecil) */
+        @media (max-width: 1100px){
+          .wa-grid{ grid-template-columns: repeat(2, minmax(160px, 1fr)); }
+        }
+        @media (max-width: 600px){
+          .wa-grid{ grid-template-columns: 1fr; }
+        }
+      `}</style>
 
-      {/* =========================
-          SCREEN VIEW (UI)
-         ========================= */}
-      <div className="screen-only screen-wrap">
-        <h2 style={{ margin: "0 0 12px" }}>Carta Profil Kompetensi (CPC)</h2>
-
-        <div
-          className="no-print"
-          style={{
-            display: "flex",
-            gap: 10,
-            alignItems: "center",
-            marginBottom: 12,
-            flexWrap: "wrap",
-          }}
-        >
-          <button onClick={() => setCompact((v) => !v)}>
-            {compact ? "Papar Penuh (WA)" : "Papar Ringkas (CU sahaja)"}
-          </button>
-          <button onClick={() => setFreeze((v) => !v)}>
-            {freeze ? "Matikan Freeze" : "Hidupkan Freeze"}
-          </button>
-          <button onClick={() => window.print()}>Print (JPK Style)</button>
-          <div style={{ opacity: 0.7 }}>
-            Session: <b>{data.sessionId}</b>
-          </div>
+      <div className="cpc-topbar">
+        <button className="btn" onClick={printNow} title="Cetak dalam format CPC">
+          Print (JPK Style)
+        </button>
+        <div className="badge">
+          <span>Session:</span> <b>{safeStr(model.sessionId) || "-"}</b>
         </div>
-
-        <div
-          style={{
-            border: "1px solid #ddd",
-            padding: 8,
-            marginBottom: 10,
-            fontSize: 12,
-            display: "flex",
-            gap: 18,
-            flexWrap: "wrap",
-          }}
-        >
-          <div>
-            <b>Session:</b> {data.sessionId}
-          </div>
-          {data.lang && (
-            <div>
-              <b>Bahasa:</b> {data.lang}
-            </div>
-          )}
-          {data.generatedAt && (
-            <div>
-              <b>Generated:</b> {data.generatedAt}
-            </div>
-          )}
+        <div className="badge">
+          <span>Bahasa:</span> <b>{safeStr(model.lang || "MS").toUpperCase()}</b>
         </div>
-
-        {/* Layout CPC (screen) */}
-        <div style={{ display: "grid", gridTemplateColumns: "220px 1fr", gap: 12 }}>
-          {/* TERAS */}
-          <div
-            style={{
-              border: "1px solid #333",
-              padding: 12,
-              background: "#f2c94c",
-              position: freeze ? "sticky" : "static",
-              top: freeze ? 10 : "auto",
-              alignSelf: "start",
-              zIndex: 3,
-              height: "fit-content",
-            }}
-          >
-            <div style={{ fontWeight: 700, marginBottom: 6 }}>TERAS</div>
-            <div style={{ fontWeight: 700, lineHeight: 1.2 }}>
-              {teras.terasTitle || "Teras"}
-            </div>
-          </div>
-
-          {/* CU + WA */}
-          <div style={{ display: "grid", gap: 12 }}>
-            {units.map((u, ui) => (
-              <div
-                key={u.cuCode || u.id || `${u.cuTitle}-${ui}`}
-                style={{ border: "1px solid #333" }}
-              >
-                <div
-                  style={{
-                    background: "#8bd17c",
-                    padding: 10,
-                    fontWeight: 700,
-                    position: freeze ? "sticky" : "static",
-                    top: freeze ? 10 : "auto",
-                    zIndex: 2,
-                  }}
-                >
-                  {u.cuCode ? `${u.cuCode}: ` : ""}
-                  {u.cuTitle || "Unit Kompetensi"}
-                </div>
-
-                {!compact && (
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                      gap: 10,
-                      padding: 10,
-                      alignItems: "stretch",
-                    }}
-                  >
-                    {(u.wa || u.activities || []).map((w, wi) => (
-                      <div
-                        key={`${u.cuCode || ui}-${w.waCode || w.id || w.waTitle || wi}`}
-                        style={{
-                          border: "1px solid #333",
-                          background: "#d6eefc",
-                          padding: 10,
-                          minHeight: 70,
-                        }}
-                      >
-                        <div style={{ fontWeight: 700 }}>
-                          {w.waCode ? `${u.cuCode || `C${ui + 1}`}-${w.waCode}` : ""}
-                        </div>
-                        <div>{w.waTitle || w.title || ""}</div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
+        <div className="badge">
+          <span>Generated:</span> <b>{generatedHuman || "-"}</b>
         </div>
       </div>
 
-      {/* =========================
-          PRINT VIEW (JPK STYLE)
-         ========================= */}
-      <div className="print-only" style={{ fontFamily: "Georgia, serif" }}>
-        <div className="jpk-page-title">Carta Profil Kompetensi (CPC)</div>
+      {err ? <div className="error">Ralat: {err}</div> : null}
 
-        {/* Header Table JPK */}
-        <table className="jpk-header-table">
-          <tbody>
-            <tr>
-              <td style={{ width: 140 }}><b>SEKSYEN</b></td>
-              <td>{JPK.seksyen}</td>
-            </tr>
-            <tr>
-              <td><b>KUMPULAN</b></td>
-              <td>{JPK.kumpulan}</td>
-            </tr>
-            <tr>
-              <td><b>BIDANG</b></td>
-              <td>{JPK.bidang}</td>
-            </tr>
-            <tr>
-              <td><b>TAJUK NOSS</b></td>
-              <td>{JPK.tajukNoss}</td>
-            </tr>
-            <tr>
-              <td><b>TAHAP NOSS</b></td>
-              <td style={{ display: "grid", gridTemplateColumns: "160px 1fr", gap: 8 }}>
-                <div>{JPK.tahap}</div>
-                <div>
-                  <b>KOD NOSS</b> &nbsp; {JPK.kodNoss}
-                </div>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-
-        <div style={{ height: 8 }} />
-
-        {/* Bars */}
-        <div style={{ display: "grid", gridTemplateColumns: "306px 1fr", gap: 8 }}>
-          <div className="jpk-bar">← UNIT KOMPETENSI →</div>
-          <div className="jpk-bar">← AKTIVITI KERJA →</div>
+      <div className="header">
+        <h1>{title}</h1>
+        <div className="meta">
+          <div>
+            <span className="muted">Session:</span> <b>{safeStr(model.sessionId) || "-"}</b>
+          </div>
+          <div>
+            <span className="muted">Bahasa:</span> <b>{safeStr(model.lang || "MS").toUpperCase()}</b>
+          </div>
+          <div>
+            <span className="muted">Generated:</span> <b>{generatedHuman || "-"}</b>
+          </div>
         </div>
+        <div className="divider" />
+      </div>
 
-        <div style={{ height: 8 }} />
+      {loading ? <div className="empty">Memuatkan CPC...</div> : null}
 
-        {/* TERAS + CU + WA
-            Nota: Untuk match contoh gambar dengan cepat, TERAS dipaparkan pada setiap row CU.
-            Kalau Prof mahu TERAS hanya sekali sahaja (lebih tepat), kita boleh refactor selepas ini.
-         */}
-        {units.map((u, ui) => {
-          const cuCode = u.cuCode || `C${String(ui + 1).padStart(2, "0")}`;
-          const tCode = teras.terasCode || "T01";
+      {!loading && (!model.cus || model.cus.length === 0) ? (
+        <div className="empty">
+          Tiada data CPC untuk dipaparkan. Pastikan session ini sudah dijana (Generate) dan endpoint backend memulangkan data.
+        </div>
+      ) : null}
+
+      {!loading &&
+        (model.cus || []).map((cu, i) => {
+          const cuNo = i + 1;
+          const cCode = `C${pad2(cuNo)}`;
+          const cuTitle = safeStr(cu?.cuTitle) || `CU-${pad2(cuNo)}`;
+          const acts = Array.isArray(cu?.activities) ? cu.activities : [];
 
           return (
-            <div key={cuCode} style={{ marginBottom: 8 }}>
-              <div className="jpk-layout">
-                {/* TERAS Vertical */}
-                <div className="jpk-teras-vertical">TERAS</div>
+            <div className="section" key={`cu-${i}`}>
+              <div className="section-title">
+                {cCode}: {cuTitle}
+              </div>
 
-                {/* CU box */}
-                <div className="jpk-cu-box">
-                  <div className="jpk-cu-title">{u.cuTitle || "Unit Kompetensi"}</div>
-                  <div className="jpk-cu-code">{`${tCode}-${cuCode}`}</div>
-                </div>
+              <div className="wa-grid">
+                {acts.length ? (
+                  acts.map((a, j) => {
+                    const wNo = j + 1;
+                    const wCode = `W${pad2(wNo)}`;
+                    const boxCode = `${cCode}-${wCode}`;
+                    const waTitle = safeStr(a?.waTitle) || `Aktiviti ${wNo}`;
 
-                {/* WA grid */}
-                <div className="jpk-wa-grid">
-                  {(u.wa || u.activities || []).map((w, wi) => {
-                    const waCode = w.waCode || `W${String(wi + 1).padStart(2, "0")}`;
                     return (
-                      <div key={`${cuCode}-${waCode}`} className="jpk-wa-box">
-                        <div className="jpk-wa-title">{w.waTitle || w.title || ""}</div>
-                        <div className="jpk-wa-code">{`${tCode}-${cuCode}-${waCode}`}</div>
+                      <div className="wa-box" key={`wa-${i}-${j}`}>
+                        <div className="wa-code">{boxCode}</div>
+                        <div className="wa-title">{waTitle}</div>
                       </div>
                     );
-                  })}
-                </div>
+                  })
+                ) : (
+                  <div className="wa-box">
+                    <div className="wa-code">{`${cCode}-W01`}</div>
+                    <div className="wa-title">—</div>
+                  </div>
+                )}
               </div>
             </div>
           );
         })}
-      </div>
-    </>
+    </div>
   );
 }
