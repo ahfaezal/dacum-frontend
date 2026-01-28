@@ -716,3 +716,197 @@ export default function ClusterPage({ onBack }) {
     </div>
   );
 } // ✅ PENTING: tutup function ClusterPage
+
+function Badge({ status }) {
+  const s = String(status || "").toUpperCase();
+  const cls =
+    s === "ADA"
+      ? "inline-block px-2 py-0.5 rounded bg-green-100 text-green-800 text-xs font-semibold"
+      : "inline-block px-2 py-0.5 rounded bg-gray-200 text-gray-800 text-xs font-semibold";
+  return <span className={cls}>{s || "—"}</span>;
+}
+
+function fmtNum(x, d = 4) {
+  const n = Number(x);
+  if (!Number.isFinite(n)) return "—";
+  return n.toFixed(d);
+}
+
+function MySpikeComparisonView({ data }) {
+  const [filter, setFilter] = React.useState("ALL"); // ALL | ADA | TIADA
+  const [q, setQ] = React.useState("");
+
+  if (!data?.ok) {
+    return (
+      <div className="mt-4 p-3 rounded border bg-white">
+        <div className="font-semibold">MySPIKE Comparison</div>
+        <div className="text-sm text-gray-600 mt-1">
+          Tiada data comparison untuk dipaparkan.
+        </div>
+      </div>
+    );
+  }
+
+  const results = Array.isArray(data.results) ? data.results : [];
+  const summary = data.summary || {};
+  const meta = data.myspike || {};
+  const sessionId = data.sessionId || data.meta?.sessionId || "—";
+
+  const filtered = results.filter((r) => {
+    const title = String(r?.input?.cuTitle || "").toLowerCase();
+    const status = String(r?.decision?.status || "").toUpperCase();
+    if (filter !== "ALL" && status !== filter) return false;
+    if (q && !title.includes(q.toLowerCase())) return false;
+    return true;
+  });
+
+  return (
+    <div className="mt-4">
+      {/* Header + Summary */}
+      <div className="p-4 rounded-lg border bg-white">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div className="text-lg font-bold">MySPIKE Comparison</div>
+            <div className="text-sm text-gray-600">
+              Session: <span className="font-semibold">{sessionId}</span> · Source:{" "}
+              <span className="font-semibold">{meta.source || "—"}</span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              className={`px-3 py-1 rounded border text-sm ${
+                filter === "ALL" ? "bg-gray-900 text-white" : "bg-white"
+              }`}
+              onClick={() => setFilter("ALL")}
+            >
+              Semua
+            </button>
+            <button
+              className={`px-3 py-1 rounded border text-sm ${
+                filter === "ADA" ? "bg-gray-900 text-white" : "bg-white"
+              }`}
+              onClick={() => setFilter("ADA")}
+            >
+              ADA ({summary.ada ?? 0})
+            </button>
+            <button
+              className={`px-3 py-1 rounded border text-sm ${
+                filter === "TIADA" ? "bg-gray-900 text-white" : "bg-white"
+              }`}
+              onClick={() => setFilter("TIADA")}
+            >
+              TIADA ({summary.tiada ?? 0})
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-3 grid grid-cols-1 md:grid-cols-5 gap-2 text-sm">
+          <div className="p-2 rounded bg-gray-50 border">
+            <div className="text-gray-500">Total CU</div>
+            <div className="font-semibold">{summary.totalCU ?? results.length}</div>
+          </div>
+          <div className="p-2 rounded bg-gray-50 border">
+            <div className="text-gray-500">Candidates</div>
+            <div className="font-semibold">{meta.totalCandidates ?? "—"}</div>
+          </div>
+          <div className="p-2 rounded bg-gray-50 border">
+            <div className="text-gray-500">Embedding Model</div>
+            <div className="font-semibold">{meta.embeddingModel ?? "—"}</div>
+          </div>
+          <div className="p-2 rounded bg-gray-50 border">
+            <div className="text-gray-500">Loaded At</div>
+            <div className="font-semibold">
+              {meta.loadedAt ? new Date(meta.loadedAt).toLocaleString() : "—"}
+            </div>
+          </div>
+          <div className="p-2 rounded bg-gray-50 border">
+            <div className="text-gray-500">Paparan</div>
+            <div className="font-semibold">{filtered.length} item</div>
+          </div>
+        </div>
+
+        <div className="mt-3">
+          <input
+            className="w-full md:w-1/2 px-3 py-2 border rounded"
+            placeholder="Cari tajuk CU…"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+          />
+        </div>
+      </div>
+
+      {/* Results list */}
+      <div className="mt-3 space-y-3">
+        {filtered.map((r, i) => {
+          const input = r.input || {};
+          const dec = r.decision || {};
+          const matches = Array.isArray(r.matches) ? r.matches : [];
+
+          return (
+            <details key={i} className="p-4 rounded-lg border bg-white">
+              <summary className="cursor-pointer select-none">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="min-w-[240px]">
+                    <div className="font-semibold">
+                      {input.cuTitle || "(Tiada tajuk CU)"}
+                    </div>
+                    <div className="text-xs text-gray-600">
+                      Activities: {input.activitiesCount ?? "—"} · CU Code:{" "}
+                      {input.cuCode || "—"}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <Badge status={dec.status} />
+                    <div className="text-xs text-gray-700">
+                      Best: <span className="font-semibold">{fmtNum(dec.bestScore)}</span>
+                      {" · "}
+                      Th: <span className="font-semibold">{fmtNum(dec.thresholdAda, 2)}</span>
+                      {" · "}
+                      Conf: <span className="font-semibold">{dec.confidence || "—"}</span>
+                    </div>
+                  </div>
+                </div>
+              </summary>
+
+              <div className="mt-3">
+                <div className="text-sm font-semibold mb-2">Top Matches</div>
+                <div className="overflow-x-auto">
+                  <table className="min-w-[720px] w-full text-sm border">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="text-left p-2 border">#</th>
+                        <th className="text-left p-2 border">CU Code</th>
+                        <th className="text-left p-2 border">CU Title</th>
+                        <th className="text-left p-2 border">Score</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {matches.length ? (
+                        matches.map((m, j) => (
+                          <tr key={j}>
+                            <td className="p-2 border">{j + 1}</td>
+                            <td className="p-2 border font-mono">{m.cuCode || "—"}</td>
+                            <td className="p-2 border">{m.cuTitle || "—"}</td>
+                            <td className="p-2 border">{fmtNum(m.score)}</td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td className="p-2 border" colSpan={4}>
+                            Tiada matches.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </details>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
