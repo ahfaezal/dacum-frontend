@@ -167,8 +167,8 @@ export default function ClusterPage({ onBack }) {
   async function loadCards(sid) {
     if (!sid) return [];
     // ✅ server.js anda ada route: GET /cards/:sessionId
-    const data = await apiGet(`/cards/${encodeURIComponent(sid)}`);
-    const items = Array.isArray(data?.items) ? data.items : [];
+    const data = await apiGet(`/api/liveboard/${encodeURIComponent(sid)}`);
+    const items = Array.isArray(data?.data?.cards) ? data.data.cards : [];
     const normalized = items.map((x) => ({
       id: String(x.id || ""),
       activity: String(x.activity || x.text || x.title || ""),
@@ -197,7 +197,7 @@ export default function ClusterPage({ onBack }) {
       setClusterResult(result);
 
       const { clusters: normClusters, unassigned: normUnassigned } =
-        normalizeClustersFromResult(result, map, cards);
+        normalizeClustersFromResult(result, map, cardList);
 
       setClusters(normClusters);
       setUnassigned(normUnassigned);
@@ -226,7 +226,7 @@ export default function ClusterPage({ onBack }) {
 
     try {
       // Backend: POST /api/cluster/run { sessionId }
-      await apiPost(`/api/cluster/run`, { sessionId: sid });
+      await apiPost(`/api/cluster/run/${encodeURIComponent(sid)}`, {});
 
       // Lepas run, reload result
       await loadResult();
