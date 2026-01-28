@@ -620,18 +620,9 @@ export default function ClusterPage({ onBack }) {
             Tiada comparison lagi. Klik Run AI Comparison (MySPIKE).
           </div>
         ) : (
-          <pre
-            style={{
-              background: "#0b1020",
-              color: "#e7e7e7",
-              padding: 12,
-              borderRadius: 12,
-              overflowX: "auto",
-              fontSize: 12,
-            }}
-          >
-            {JSON.stringify(cuWaOutput.myspikeCompare, null, 2)}
-          </pre>
+
+      <MySpikeComparisonView data={cuWaOutput?.myspikeCompare} />
+      
         )}
       </div>
 
