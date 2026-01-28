@@ -68,29 +68,56 @@ async function apiPost(path, body) {
   return json ?? {};
 }
 
+function normId(v) {
+  if (v === null || v === undefined) return "";
+  const s = String(v).trim();
+  // elak "null", "undefined" jadi id
+  if (s === "null" || s === "undefined") return "";
+  return s;
+}
+
 function normalizeClustersFromResult(result, cardsById) {
   const rawClusters = Array.isArray(result?.clusters) ? result.clusters : [];
+
+  const getCardById = (id) => {
+    const k = normId(id);
+    if (!k) return null;
+    // Object key access (JS akan stringify, tapi kita normalise dulu)
+    return cardsById?.[k] ?? null;
+  };
 
   const clusters = rawClusters.map((c, idx) => {
     const cid = String(c?.id || `cl_${idx}`);
     const title = String(c?.title || c?.name || `Cluster ${idx + 1}`);
 
     const cardIds = Array.isArray(c?.cardIds) ? c.cardIds : [];
-    const items = cardIds.map((id) => {
-      const card = cardsById?.[id];
-      if (card) return card;
-      return { id, activity: `(Kad tidak dijumpai: ${id})`, time: "", _src: "missing" };
-    });
+
+    const items = cardIds
+      .map((id) => normId(id))          // normalise
+      .filter((id) => !!id)             // buang null/empty
+      .map((id) => {
+        const card = getCardById(id);
+        if (card) return card;
+        return {
+          id,
+          activity: `(Kad tidak dijumpai: ${id})`,
+          time: "",
+          _src: "missing",
+        };
+      });
 
     return { id: cid, title, items };
   });
 
   const unassignedIds = Array.isArray(result?.unassigned) ? result.unassigned : [];
-  const unassigned = unassignedIds.map((id) => {
-    const card = cardsById?.[id];
-    if (card) return card;
-    return { id, activity: `(Kad tidak dijumpai: ${id})`, time: "", _src: "missing" };
-  });
+  const unassigned = unassignedIds
+    .map((id) => normId(id))
+    .filter((id) => !!id)
+    .map((id) => {
+      const card = getCardById(id);
+      if (card) return card;
+      return { id, activity: `(Kad tidak dijumpai: ${id})`, time: "", _src: "missing" };
+    });
 
   return { clusters, unassigned };
 }
@@ -111,7 +138,10 @@ export default function ClusterPage({ onBack }) {
   const [cards, setCards] = useState([]); // [{id, activity, time, _src}]
   const cardsById = useMemo(() => {
     const m = {};
-    for (const c of cards) m[String(c.id)] = c;
+    (cards || []).forEach((c) => {
+      const id = normId(c?.id ?? c?.cardId ?? c?._id);
+      if (id) m[id] = c;
+    });
     return m;
   }, [cards]);
 
