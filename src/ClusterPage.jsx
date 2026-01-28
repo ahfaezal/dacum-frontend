@@ -723,25 +723,6 @@ function fmtNum(x, d = 4) {
   return n.toFixed(d);
 }
 
-function Badge({ status }) {
-  const s = String(status || "").toUpperCase();
-  const isAda = s === "ADA";
-
-  const style = {
-    display: "inline-block",
-    padding: "2px 8px",
-    borderRadius: 999,
-    fontSize: 12,
-    fontWeight: 700,
-    border: "1px solid",
-    background: isAda ? "#E7F7EE" : "#F2F2F2",
-    color: isAda ? "#0F6A3B" : "#333",
-    borderColor: isAda ? "#9AD8B2" : "#DDD",
-  };
-
-  return <span style={style}>{s || "—"}</span>;
-}
-
 function MySpikeComparisonView({ data }) {
   const [filter, setFilter] = React.useState("ALL"); // ALL | ADA | TIADA
   const [q, setQ] = React.useState("");
