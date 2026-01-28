@@ -253,40 +253,49 @@ export default function ClusterPage({ initialSessionId = "Masjid", onBack }) {
     return [];
   }
 
-  async function loadResult() {
-    const sid = String(sessionId || "").trim();
-    if (!sid) return;
+async function loadResult() {
+  const sid = String(sessionId || "").trim();
+  if (!sid) return;
 
-    setErr("");
+  setErr("");
 
-    try {
-      const path = `/api/cluster/result/${encodeURIComponent(sid)}`;
-      console.log("LOAD RESULT:", path);
-      const out = await apiGet(path);
-      console.log("LOAD RESULT OK:", out);
+  try {
+    const path = `/api/cluster/result/${encodeURIComponent(sid)}`;
+    console.log("LOAD RESULT:", path);
 
-      setClusterResult(out);
-      return;
-    } catch (e) {
-      console.warn("NO CLUSTER RESULT YET:", e?.message || e);
-      // BUKAN error — ini state biasa
+    const out = await apiGet(path);
+    console.log("LOAD RESULT OK:", out);
+
+    // ✅ simpan raw result (jika anda guna)
+    setRawResult(out);
+
+    // ✅ normalize untuk editor (jika anda guna)
+    const cards = await loadSessionCards(sid);
+    const cardMap = buildCardMap(cards);
+    const normalized = normalizeClustersWithCardMap(out, cardMap);
+
+    setClusterResult(out);      // untuk paparan preview/result
+    setClusters(normalized);    // untuk edit clustering (sebelum merge)
+    setAgreed(false);
+    return;
+  } catch (e) {
+    const msg = String(e?.message || e);
+
+    // 404 = belum ada result (state biasa)
+    if (msg.includes("404")) {
+      console.warn("NO CLUSTER RESULT YET:", msg);
       setClusterResult(null);
-    }
-  }
-
-      if (!out) throw new Error(last || "Gagal load cluster result (tiada endpoint serasi).");
-
-      const cards = await loadSessionCards(sid);
-      const cardMap = buildCardMap(cards);
-      const normalized = normalizeClustersWithCardMap(out, cardMap);
-
-      setRawResult(out);
-      setClusters(normalized);
+      setClusters([]);
+      setRawResult(null);
       setAgreed(false);
-    } catch (e) {
-      setErr(String(e?.message || e));
+      setErr(""); // jangan merah besar
+      return;
     }
+
+    // selain 404, baru anggap error sebenar
+    setErr(msg);
   }
+}
 
   async function runClustering() {
     const sid = String(sessionId || "").trim();
