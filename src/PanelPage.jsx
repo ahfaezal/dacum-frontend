@@ -1,61 +1,90 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 
 const API_BASE =
-  import.meta.env.VITE_API_BASE || "https://dacum-backend.onrender.com";
+  (import.meta?.env?.VITE_API_BASE && String(import.meta.env.VITE_API_BASE)) ||
+  "https://dacum-backend.onrender.com";
+
+function sanitizeSessionId(s) {
+  return String(s || "")
+    .trim()
+    .replace(/\s+/g, "-")
+    .replace(/[^a-zA-Z0-9._-]/g, "");
+}
 
 export default function PanelPage() {
   const apiBase = useMemo(() => {
     const v = String(API_BASE || "").trim();
     if (!v) return "https://dacum-backend.onrender.com";
-    return v.replace("onrenderer.com", "onrender.com").replace(/\/+$/, "");
+    return v.replace(/\/+$/, "");
   }, []);
 
   const [sessionId, setSessionId] = useState("Masjid");
   const [panelName, setPanelName] = useState("");
   const [activity, setActivity] = useState("");
   const [sending, setSending] = useState(false);
+  const [items, setItems] = useState([]);
+  const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
 
+  async function loadItems(sidRaw) {
+    const sid = sanitizeSessionId(sidRaw);
+    if (!sid) {
+      setItems([]);
+      return;
+    }
+    setBusy(true);
+    try {
+      const r = await fetch(
+        `${apiBase}/api/panel/list/${encodeURIComponent(sid)}`
+      );
+      const j = await r.json();
+      if (!r.ok || !j?.ok) throw new Error(j?.error || "Gagal load data");
+      setItems(Array.isArray(j.items) ? j.items : []);
+    } catch (e) {
+      // biar senyap supaya UI tak ganggu panel
+      console.error(e);
+      setItems([]);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  useEffect(() => {
+    const sid = sanitizeSessionId(sessionId);
+    if (!sid) {
+      setItems([]);
+      return;
+    }
+    const t = setTimeout(() => {
+      loadItems(sid).catch(() => {});
+    }, 300);
+    return () => clearTimeout(t);
+  }, [sessionId]);
+
   async function submitOne() {
-    const sid = String(sessionId || "").trim();
-    const name = String(panelName || "").trim();
-    const act = String(activity || "").trim();
-
-    if (!sid) return alert("Sila isi Session.");
-    if (!name) return alert("Sila isi Nama Panel.");
-    if (!act) return alert("Sila isi Aktiviti Kerja.");
-
-    setSending(true);
     setMsg("");
 
-    try {
-      // ✅ Endpoint utama (paling munasabah):
-      // POST /api/cards/:sessionId
-      // body: { name, panelName, activity }
-      const url = `${apiBase}/api/cards/${encodeURIComponent(sid)}`;
+    const sid = sanitizeSessionId(sessionId);
+    const pn = String(panelName || "").trim();
+    const tx = String(activity || "").trim();
 
-      const r = await fetch(url, {
+    if (!sid) return setMsg("⚠️ Sila isi SESSION (tanpa spacing).");
+    if (!pn) return setMsg("⚠️ Sila isi NAMA PANEL.");
+    if (!tx) return setMsg("⚠️ Sila isi Aktiviti Kerja.");
+
+    setSending(true);
+    try {
+      const r = await fetch(`${apiBase}/api/panel/submit`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: act,          // supaya selari dengan paparan kad (c.name)
-          panelName: name,    // simpan siapa hantar
-          activity: act,      // redundan tapi selamat
-          time: new Date().toISOString(),
-        }),
+        body: JSON.stringify({ sessionId: sid, panelName: pn, text: tx }),
       });
-
-      const j = await r.json().catch(() => null);
-
-      if (!r.ok || (j && j.ok === false)) {
-        throw new Error(
-          (j && (j.error || j.message)) ||
-            `Gagal hantar (HTTP ${r.status}). Endpoint backend mungkin berbeza.`
-        );
-      }
+      const j = await r.json();
+      if (!r.ok || !j?.ok) throw new Error(j?.error || "Gagal submit");
 
       setActivity("");
-      setMsg(`✅ Berjaya dihantar oleh ${name}: ${act}`);
+      setMsg(`✅ Berjaya dihantar oleh ${pn}.`);
+      await loadItems(sid);
     } catch (e) {
       setMsg(`❌ ${String(e?.message || e)}`);
     } finally {
@@ -142,7 +171,10 @@ export default function PanelPage() {
           </button>
 
           <button
-            onClick={() => setActivity("")}
+            onClick={() => {
+              setActivity("");
+              setMsg("");
+            }}
             style={{
               padding: "10px 12px",
               borderRadius: 10,
@@ -162,8 +194,40 @@ export default function PanelPage() {
           </div>
         ) : null}
 
+        <div style={{ marginTop: 14 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <b>Rekod dihantar (S3)</b>
+            {busy ? (
+              <span style={{ fontSize: 12, color: "#666" }}>loading...</span>
+            ) : null}
+          </div>
+
+          {items.length === 0 ? (
+            <div style={{ marginTop: 8, fontSize: 12, color: "#666" }}>
+              Tiada rekod.
+            </div>
+          ) : (
+            <ol style={{ marginTop: 8, paddingLeft: 18 }}>
+              {items
+                .slice()
+                .reverse()
+                .map((it) => (
+                  <li key={it.id} style={{ marginBottom: 10 }}>
+                    <div>
+                      <b>{it.panelName}</b>: {it.text}
+                    </div>
+                    <div style={{ fontSize: 12, color: "#666" }}>
+                      {it.createdAt}
+                    </div>
+                  </li>
+                ))}
+            </ol>
+          )}
+        </div>
+
         <div style={{ marginTop: 10, fontSize: 12, color: "#666" }}>
-          Nota: Panel hanya hantar kad. Fasilitator akan klik “Agreed” di LiveBoard bila semua input selesai.
+          Nota: Panel hanya hantar kad. Fasilitator akan klik “Agreed” di LiveBoard
+          bila semua input selesai.
         </div>
       </div>
     </div>
