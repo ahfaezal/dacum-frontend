@@ -24,6 +24,40 @@ function getQueryParam(name) {
   return hs.get(name) || "";
 }
 
+function fmtTime(t) {
+  if (!t) return "";
+  // support ISO string
+  try {
+    const d = new Date(t);
+    if (Number.isNaN(d.getTime())) return String(t);
+    const hh = String(d.getHours()).padStart(2, "0");
+    const mm = String(d.getMinutes()).padStart(2, "0");
+    const ss = String(d.getSeconds()).padStart(2, "0");
+    return `${hh}:${mm}:${ss}`;
+  } catch {
+    return String(t);
+  }
+}
+
+function normalizeCard(raw, idx) {
+  const text = String(raw?.activity || raw?.name || raw?.text || "").trim();
+  const time = raw?.time || raw?.createdAt || "";
+  const id = raw?.id || `${idx}-${time || "x"}`;
+  return {
+    id,
+    text,
+    time,
+    panelName: raw?.panelName || "",
+    source: raw?.source || "",
+  };
+}
+
+function buildGrid(cards, cols) {
+  const rows = [];
+  for (let i = 0; i < cards.length; i += cols) rows.push(cards.slice(i, i + cols));
+  return rows;
+}
+
 export default function LiveBoard({ onAgreed }) {
   const apiBase = useMemo(() => {
     const v = String(API_BASE || "").trim();
@@ -41,6 +75,16 @@ export default function LiveBoard({ onAgreed }) {
   const [cards, setCards] = useState([]);
   const [freeze, setFreeze] = useState(false);
 
+  // Paparan (grid seperti lama)
+  const [cols, setCols] = useState(() => {
+    // default: desktop 8 kolum (macam paparan lama), mobile akan auto turun
+    const w = typeof window !== "undefined" ? window.innerWidth : 1200;
+    if (w < 640) return 1;
+    if (w < 900) return 3;
+    if (w < 1200) return 6;
+    return 8;
+  });
+
   // Bahasa NOSS (ditetapkan fasilitator)
   const [lang, setLang] = useState("MS"); // MS | EN
   const [langLocked, setLangLocked] = useState(false);
@@ -48,7 +92,7 @@ export default function LiveBoard({ onAgreed }) {
 
   const [cfgErr, setCfgErr] = useState("");
   const [boardErr, setBoardErr] = useState("");
-  const [hydrated, setHydrated] = useState(false); // elak autosave sebelum load
+  const [hydrated, setHydrated] = useState(false);
 
   const saveTimer = useRef(null);
 
@@ -69,6 +113,24 @@ export default function LiveBoard({ onAgreed }) {
     if (!res.ok) throw new Error(json?.error || `POST ${path} -> ${res.status}`);
     return json;
   }
+
+  // =========
+  // Responsive cols (ikut saiz skrin)
+  // =========
+  useEffect(() => {
+    function onResize() {
+      const w = window.innerWidth;
+      let next = 8;
+      if (w < 640) next = 1;
+      else if (w < 900) next = 3;
+      else if (w < 1200) next = 6;
+      else next = 8;
+      setCols(next);
+    }
+    onResize();
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
 
   // =========
   // 1) Load CONFIG bila sessionId berubah
@@ -128,11 +190,9 @@ export default function LiveBoard({ onAgreed }) {
 
         const data = out?.data || {};
         const nextCards = Array.isArray(data?.cards) ? data.cards : [];
-
         setCards(nextCards);
         setHydrated(true);
       } catch (e) {
-        // fallback: kalau endpoint S3 belum wujud, jangan “mati”
         if (!alive) return;
         setBoardErr(String(e?.message || e));
         setHydrated(true);
@@ -146,30 +206,29 @@ export default function LiveBoard({ onAgreed }) {
   }, [apiBase, sessionId]);
 
   // =========
-  // 3) Poll — utamakan S3 liveboard; fallback ke endpoint lama /api/cards
+  // 3) Poll — baca S3 liveboard sahaja (single source of truth)
   // =========
   useEffect(() => {
     if (freeze) return;
 
     let alive = true;
 
-  async function tick() {
-    if (!alive) return;
-
-    const sid = String(sessionId || "").trim();
-    if (!sid) return;
-
-    try {
-      const out = await apiGet(`/api/liveboard/${encodeURIComponent(sid)}`);
+    async function tick() {
       if (!alive) return;
+      const sid = String(sessionId || "").trim();
+      if (!sid) return;
 
-      const data = out?.data || {};
-      const nextCards = Array.isArray(data?.cards) ? data.cards : [];
-      setCards(nextCards);
-    } catch {
-      // senyap je – elak ganggu fasilitator
+      try {
+        const out = await apiGet(`/api/liveboard/${encodeURIComponent(sid)}`);
+        if (!alive) return;
+
+        const data = out?.data || {};
+        const nextCards = Array.isArray(data?.cards) ? data.cards : [];
+        setCards(nextCards);
+      } catch {
+        // senyap je – elak ganggu fasilitator
+      }
     }
-  }
 
     tick();
     const t = setInterval(tick, 1200);
@@ -244,16 +303,22 @@ export default function LiveBoard({ onAgreed }) {
     setAgreedOnce(true);
   }
 
-  function goClusterPage() {
+  function goClusterPageNewTab() {
     const sid = String(sessionId || "").trim();
     if (!sid) return alert("Sila isi Session dulu.");
 
+    // kalau parent nak handle, bagi peluang
     if (typeof onAgreed === "function") {
       onAgreed(sid);
       return;
     }
 
-    window.location.hash = `#/cluster?session=${encodeURIComponent(sid)}`;
+    const url = `${window.location.origin}${window.location.pathname}#/cluster?session=${encodeURIComponent(
+      sid
+    )}`;
+
+    // buka tab baru
+    window.open(url, "_blank", "noopener,noreferrer");
   }
 
   function goFullscreen() {
@@ -267,11 +332,28 @@ export default function LiveBoard({ onAgreed }) {
     ? `DIKUNCI${lockedAt ? ` @ ${lockedAt}` : ""}`
     : "BELUM LOCK";
 
+  // Normalize + sort by time asc (seperti flow input)
+  const normalized = useMemo(() => {
+    const arr = (Array.isArray(cards) ? cards : []).map(normalizeCard).filter((c) => c.text);
+    arr.sort((a, b) => {
+      const ta = new Date(a.time || 0).getTime();
+      const tb = new Date(b.time || 0).getTime();
+      return ta - tb;
+    });
+    return arr;
+  }, [cards]);
+
+  // Tag "BARU" pada kad paling akhir (latest)
+  const latestId = useMemo(() => {
+    if (!normalized.length) return "";
+    return normalized[normalized.length - 1].id;
+  }, [normalized]);
+
+  const gridRows = useMemo(() => buildGrid(normalized, cols), [normalized, cols]);
+
   return (
-    <div style={{ padding: 16, maxWidth: 900, margin: "0 auto" }}>
-      <h2 style={{ margin: "6px 0 10px" }}>
-        Live Board (DACUM Card) — Fasilitator
-      </h2>
+    <div style={{ padding: 16, maxWidth: 1100, margin: "0 auto" }}>
+      <h2 style={{ margin: "6px 0 10px" }}>Live Board (DACUM Card) — Fasilitator</h2>
 
       <div style={{ marginBottom: 10, fontSize: 14 }}>
         <b>Status:</b> {freeze ? "FREEZE" : "LIVE"} {" | "}
@@ -283,13 +365,29 @@ export default function LiveBoard({ onAgreed }) {
       </div>
 
       {cfgErr ? (
-        <div style={{ padding: 10, borderRadius: 10, background: "#fee2e2", border: "1px solid #ef4444", marginBottom: 10 }}>
+        <div
+          style={{
+            padding: 10,
+            borderRadius: 10,
+            background: "#fee2e2",
+            border: "1px solid #ef4444",
+            marginBottom: 10,
+          }}
+        >
           <b>Config error:</b> {cfgErr}
         </div>
       ) : null}
 
       {boardErr ? (
-        <div style={{ padding: 10, borderRadius: 10, background: "#fffbeb", border: "1px solid #f59e0b", marginBottom: 10 }}>
+        <div
+          style={{
+            padding: 10,
+            borderRadius: 10,
+            background: "#fffbeb",
+            border: "1px solid #f59e0b",
+            marginBottom: 10,
+          }}
+        >
           <b>LiveBoard (S3) belum tersedia / fallback aktif:</b> {boardErr}
         </div>
       ) : null}
@@ -312,7 +410,15 @@ export default function LiveBoard({ onAgreed }) {
         />
       </div>
 
-      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginBottom: 10 }}>
+      <div
+        style={{
+          display: "flex",
+          gap: 10,
+          flexWrap: "wrap",
+          alignItems: "center",
+          marginBottom: 10,
+        }}
+      >
         <div style={{ fontWeight: 700 }}>Bahasa NOSS:</div>
         <select
           value={lang}
@@ -365,35 +471,93 @@ export default function LiveBoard({ onAgreed }) {
         Nota: Freeze digunakan semasa perbincangan & pengesahan akhir.
       </div>
 
+      {/* ======= PAPARAN DACUM CARD (GRID LAMA) ======= */}
       <div style={{ marginBottom: 10 }}>
-        <div style={{ fontWeight: 800, marginBottom: 8 }}>SENARAI KAD</div>
+        <div style={{ fontWeight: 800, marginBottom: 8 }}>DACUM CARD (LIVE)</div>
 
-        <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, overflow: "hidden" }}>
-          {cards.map((c, idx) => (
-            <div
-              key={c?.id || `${idx}`}
+        <div
+          style={{
+            border: "1px solid #e5e7eb",
+            borderRadius: 12,
+            overflow: "hidden",
+            padding: 12,
+            background: "#fff",
+          }}
+        >
+          {normalized.length === 0 ? (
+            <div style={{ color: "#666" }}>Belum ada kad untuk session ini.</div>
+          ) : (
+            <table
               style={{
-                padding: "10px 12px",
-                borderBottom: idx === cards.length - 1 ? "none" : "1px solid #e5e7eb",
-                display: "flex",
-                justifyContent: "space-between",
-                gap: 12,
+                width: "100%",
+                borderCollapse: "collapse",
+                tableLayout: "fixed",
               }}
             >
-              <div style={{ fontWeight: 600 }}>
-                {String(c?.activity || c?.name || "").trim()}
-              </div>
-              <div style={{ fontSize: 12, color: "#555", whiteSpace: "nowrap" }}>
-                {c?.time || ""}
-              </div>
-            </div>
-          ))}
+              <tbody>
+                {gridRows.map((row, rIdx) => (
+                  <tr key={`r-${rIdx}`}>
+                    {row.map((c) => {
+                      const isNew = c.id === latestId;
+                      return (
+                        <td
+                          key={c.id}
+                          style={{
+                            border: "1px solid #111",
+                            padding: 10,
+                            verticalAlign: "top",
+                            height: 96,
+                            background: isNew ? "#fff7ed" : "#fff",
+                          }}
+                        >
+                          <div style={{ fontWeight: 800, lineHeight: 1.2 }}>
+                            {c.text}
+                          </div>
+                          <div style={{ marginTop: 8, fontSize: 12, color: "#444", display: "flex", justifyContent: "space-between" }}>
+                            <span>{fmtTime(c.time)}</span>
+                            {isNew ? (
+                              <span
+                                style={{
+                                  fontSize: 11,
+                                  fontWeight: 800,
+                                  padding: "2px 8px",
+                                  borderRadius: 999,
+                                  border: "1px solid #111",
+                                  background: "#111",
+                                  color: "#fff",
+                                }}
+                              >
+                                BARU
+                              </span>
+                            ) : null}
+                          </div>
+                        </td>
+                      );
+                    })}
 
-          {cards.length === 0 && (
-            <div style={{ padding: "12px", color: "#666" }}>
-              Belum ada kad untuk session ini.
-            </div>
+                    {/* pad kosong untuk lengkapkan kolum */}
+                    {row.length < cols
+                      ? Array.from({ length: cols - row.length }).map((_, i) => (
+                          <td
+                            key={`empty-${rIdx}-${i}`}
+                            style={{
+                              border: "1px solid #111",
+                              padding: 10,
+                              height: 96,
+                              background: "#fff",
+                            }}
+                          />
+                        ))
+                      : null}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           )}
+
+          <div style={{ marginTop: 10, fontSize: 12, color: "#666" }}>
+            Tip: Ini paparan “raw + timestamp” (belum grouping). Clustering CU dibuat selepas cukup input.
+          </div>
         </div>
       </div>
 
@@ -415,7 +579,7 @@ export default function LiveBoard({ onAgreed }) {
 
         {agreedOnce && (
           <button
-            onClick={goClusterPage}
+            onClick={goClusterPageNewTab}
             style={{
               padding: "10px 14px",
               borderRadius: 10,
@@ -426,7 +590,7 @@ export default function LiveBoard({ onAgreed }) {
               fontWeight: 700,
             }}
           >
-            Cluster Page
+            Cluster Page (Tab Baru)
           </button>
         )}
       </div>
