@@ -259,28 +259,20 @@ export default function ClusterPage({ initialSessionId = "Masjid", onBack }) {
 
     setErr("");
 
-    const tries = [
-      `/api/cluster/result/${encodeURIComponent(sid)}`,
-      `/api/cluster/result?session=${encodeURIComponent(sid)}`,
-      `/api/cluster/result?sessionId=${encodeURIComponent(sid)}`,
-      `/api/cluster/result?sid=${encodeURIComponent(sid)}`,
-    ];
-
-    let out = null;
-    let last = "";
-
     try {
-      for (const path of tries) {
-        try {
-          console.log("LOAD RESULT TRY:", path);
-          out = await apiGet(path);
-          console.log("LOAD RESULT OK:", path, out);
-          break;
-        } catch (e) {
-          last = String(e?.message || e);
-          console.warn("LOAD RESULT FAIL:", path, last);
-        }
-      }
+      const path = `/api/cluster/result/${encodeURIComponent(sid)}`;
+      console.log("LOAD RESULT:", path);
+      const out = await apiGet(path);
+      console.log("LOAD RESULT OK:", out);
+
+      setClusterResult(out);
+      return;
+    } catch (e) {
+      console.warn("NO CLUSTER RESULT YET:", e?.message || e);
+      // BUKAN error — ini state biasa
+      setClusterResult(null);
+    }
+  }
 
       if (!out) throw new Error(last || "Gagal load cluster result (tiada endpoint serasi).");
 
