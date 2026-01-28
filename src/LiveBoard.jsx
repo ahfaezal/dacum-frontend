@@ -303,6 +303,32 @@ export default function LiveBoard({ onAgreed }) {
     setAgreedOnce(true);
   }
 
+async function doUnlockSession() {
+  const sid = String(sessionId || "").trim();
+  if (!sid) return alert("Sila isi Session dulu.");
+
+  const ok = window.confirm(
+    "Anda pasti mahu UNLOCK session ini?\n\n" +
+    "Panel akan boleh hantar kad semula dan sesi kembali LIVE."
+  );
+  if (!ok) return;
+
+  try {
+    const out = await apiPost(
+      `/api/session/unlock/${encodeURIComponent(sid)}`
+    );
+
+    setLangLocked(false);
+    setLockedAt(null);
+    setFreeze(false);
+    setAgreedOnce(false);
+
+    alert("Session berjaya di-UNLOCK.");
+  } catch (e) {
+    alert(String(e?.message || e));
+  }
+}
+  
   function goClusterPageNewTab() {
     const sid = String(sessionId || "").trim();
     if (!sid) return alert("Sila isi Session dulu.");
@@ -562,21 +588,25 @@ export default function LiveBoard({ onAgreed }) {
       </div>
 
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-        <button
-          onClick={doAgreedLockOnly}
-          style={{
-            padding: "10px 14px",
-            borderRadius: 10,
-            border: "1px solid #111",
-            background: "#111",
-            color: "#fff",
-            cursor: "pointer",
-            fontWeight: 700,
-          }}
-        >
-          Agreed
-        </button>
+        {/* AGREE (hanya bila belum lock) */}
+        {!langLocked && (
+          <button
+            onClick={doAgreedLockOnly}
+            style={{
+              padding: "10px 14px",
+              borderRadius: 10,
+              border: "1px solid #111",
+              background: "#111",
+              color: "#fff",
+              cursor: "pointer",
+              fontWeight: 700,
+            }}
+          >
+            Agreed
+          </button>
+        )}
 
+        {/* CLUSTER PAGE – TAB BARU (lepas Agreed) */}
         {agreedOnce && (
           <button
             onClick={goClusterPageNewTab}
@@ -591,6 +621,24 @@ export default function LiveBoard({ onAgreed }) {
             }}
           >
             Cluster Page (Tab Baru)
+          </button>
+        )}
+
+        {/* UNLOCK (hanya bila session dikunci) */}
+        {langLocked && (
+          <button
+            onClick={doUnlockSession}
+            style={{
+              padding: "10px 14px",
+              borderRadius: 10,
+              border: "1px solid #b91c1c",
+              background: "#b91c1c",
+              color: "#fff",
+              cursor: "pointer",
+              fontWeight: 700,
+            }}
+          >
+            Unlock Session
           </button>
         )}
       </div>
