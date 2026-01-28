@@ -405,301 +405,230 @@ async function loadCards(sid) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  return (
-    <div style={{ padding: 18, maxWidth: 1200, margin: "0 auto" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
-        <h1 style={{ marginTop: 0 }}>Cluster Page</h1>
-        {onBack ? (
-          <button onClick={onBack} style={{ height: 36 }}>
-            Back
-          </button>
-        ) : null}
-      </div>
+return (
+  <div style={{ padding: 24, fontFamily: "system-ui, Arial" }}>
+    <h1 style={{ marginTop: 0 }}>Cluster Page</h1>
 
-      {/* ACTION BAR */}
-      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-        <input
-          value={sessionId}
-          onChange={(e) => setSessionId(e.target.value)}
-          style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #ccc", minWidth: 220 }}
-        />
+    {onBack ? (
+      <button onClick={onBack} style={{ marginBottom: 10 }}>
+        Back
+      </button>
+    ) : null}
 
-        <button onClick={runClustering} disabled={busy || aiLoading} style={{ height: 36 }}>
-          {aiLoading ? "NOSS AI Loading..." : "Run AI (Clustering)"}
-        </button>
-
-        <button onClick={loadResult} disabled={busy} style={{ height: 36 }}>
-          Reload Result
-        </button>
-
-        <button
-          onClick={applyMerge}
-          disabled={busy || !agreed}
-          title={!agreed ? "Sila Agreed dahulu" : "Proceed Merge"}
-          style={{ height: 36 }}
-        >
-          Apply AI (Merge)
-        </button>
-
-        <button
-          onClick={() => loadCuWaOutput(String(sessionId || "").trim())}
-          disabled={busy}
-          style={{ height: 36 }}
-          title="Tarik semula output CU/WA dari server (session.cus)"
-        >
-          Reload CU (cus)
-        </button>
-
-        <button onClick={buildMyspikeIndex} disabled={busy} style={{ height: 36 }}>
-          Build MySPIKE Index
-        </button>
-
-        <button onClick={runMyspikeComparison} disabled={busy} style={{ height: 36 }}>
-          Run AI Comparison (MySPIKE)
-        </button>
-      </div>
-
-      <div style={{ marginTop: 8, color: "#444" }}>
-        Session: <b>{sidTrim || "-"}</b> &nbsp;&nbsp;
-        {agreed ? (
-          <span style={{ color: "green", fontWeight: 700 }}>✓ AGREED</span>
-        ) : (
-          <span style={{ color: "#c77800", fontWeight: 700 }}>* BELUM AGREED</span>
-        )}
-      </div>
-
-      {err ? (
-        <div style={{ marginTop: 8, color: "crimson" }}>
-          <b>Error:</b> {err}
-        </div>
-      ) : null}
-
-      {/* EDIT CLUSTERING */}
-      <div
+    {/* ACTION BAR */}
+    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+      <input
+        value={sessionId}
+        onChange={(e) => setSessionId(e.target.value)}
         style={{
-          marginTop: 14,
-          border: "1px solid #ddd",
-          borderRadius: 12,
-          padding: 12,
-          background: "#fff",
+          padding: "8px 10px",
+          borderRadius: 10,
+          border: "1px solid #ccc",
+          minWidth: 220,
         }}
+      />
+
+      <button onClick={runClustering} disabled={busy} style={{ height: 36 }}>
+        {aiLoading ? "NOSS AI Loading..." : "Run AI (Clustering)"}
+      </button>
+
+      <button onClick={loadResult} disabled={busy} style={{ height: 36 }}>
+        Reload Result
+      </button>
+
+      <button onClick={applyMerge} disabled={busy || !agreed} style={{ height: 36 }}>
+        Apply AI (Merge)
+      </button>
+
+      <button
+        onClick={() => loadCuWaOutput(String(sessionId || "").trim())}
+        disabled={busy}
+        style={{ height: 36 }}
+        title="Tarik semula output CU/WA dari server (session.cus)"
       >
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-          <div>
-            <h3 style={{ margin: "4px 0" }}>Edit Clustering (sebelum Merge)</h3>
-            <div style={{ fontSize: 13, color: "#666" }}>
-              Anda boleh: ubah tajuk cluster dan pindahkan aktiviti. Selepas selesai, tekan <b>Agreed</b> untuk lock
-              sebelum <b>Apply AI (Merge)</b>.
+        Reload CU (cus)
+      </button>
+
+      <button onClick={buildMyspikeIndex} disabled={busy} style={{ height: 36 }}>
+        Build MySPIKE Index
+      </button>
+
+      <button onClick={runMyspikeComparison} disabled={busy} style={{ height: 36 }}>
+        Run AI Comparison (MySPIKE)
+      </button>
+    </div>
+
+    <div style={{ marginTop: 8, marginBottom: 14 }}>
+      <span>
+        Session: <b>{sidTrim || "-"}</b>
+      </span>
+      <span style={{ marginLeft: 10, color: agreed ? "green" : "#cc7a00" }}>
+        {agreed ? "✓ AGREED" : "* BELUM AGREED"}
+      </span>
+    </div>
+
+    {err ? (
+      <div style={{ background: "#ffecec", border: "1px solid #ffb3b3", padding: 10, borderRadius: 8 }}>
+        <b>Error:</b> {err}
+      </div>
+    ) : null}
+
+    {/* EDIT CLUSTERING */}
+    <div style={{ marginTop: 16, padding: 12, border: "1px solid #eee", borderRadius: 10 }}>
+      <h2 style={{ marginTop: 0 }}>Edit Clustering (sebelum Merge)</h2>
+      <div style={{ color: "#555", marginBottom: 10 }}>
+        Anda boleh: ubah tajuk cluster dan pindahkan aktiviti. Selepas selesai, tekan Agreed untuk lock sebelum Apply AI (Merge).
+      </div>
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+        <button onClick={addCluster} disabled={busy}>+ Add Cluster</button>
+        <button onClick={doAgreed} disabled={busy}>Agreed</button>
+      </div>
+
+      {!clusters.length ? (
+        <div style={{ color: "#666" }}>Belum ada hasil clustering. Tekan Run AI (Clustering).</div>
+      ) : (
+        <div style={{ display: "grid", gap: 12 }}>
+          {clusters.map((c) => (
+            <div key={c.id} style={{ border: "1px solid #eee", borderRadius: 12, padding: 12 }}>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <input
+                  value={c.title}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setClusters((prev) => prev.map((x) => (x.id === c.id ? { ...x, title: v } : x)));
+                    setAgreed(false);
+                  }}
+                  style={{
+                    fontSize: 16,
+                    fontWeight: 700,
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: 10,
+                    border: "1px solid #ddd",
+                  }}
+                />
+                <button onClick={() => removeEmptyCluster(c.id)} disabled={busy} title="Buang cluster (manual)">
+                  Buang
+                </button>
+              </div>
+
+              <div style={{ marginTop: 10 }}>
+                {(c.items || []).length ? (
+                  <ul style={{ margin: "6px 0 0 18px" }}>
+                    {c.items.map((it) => (
+                      <li key={String(it.id)} style={{ margin: "6px 0" }}>
+                        <b>{it.activity || "(tiada teks)"}</b>{" "}
+                        {it.time ? <span style={{ color: "#777" }}>({it.time})</span> : null}{" "}
+                        {it._src ? <span style={{ color: "#777" }}>[{it._src}]</span> : null}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <div style={{ color: "#666" }}>Tiada aktiviti dalam cluster ini.</div>
+                )}
+              </div>
             </div>
-          </div>
-          <div style={{ display: "flex", gap: 10 }}>
-            <button onClick={addCluster} disabled={busy} style={{ height: 34 }}>
-              + Add Cluster
-            </button>
-            <button onClick={doAgreed} disabled={busy} style={{ height: 34 }}>
-              Agreed
-            </button>
+          ))}
+
+          {/* UNASSIGNED */}
+          <div style={{ borderTop: "1px solid #eee", paddingTop: 10 }}>
+            <h3 style={{ margin: "8px 0" }}>Unassigned</h3>
+            {unassigned.length ? (
+              <ul style={{ margin: "6px 0 0 18px" }}>
+                {unassigned.map((u) => (
+                  <li key={String(u.id)} style={{ margin: "6px 0" }}>
+                    <b>{u.activity || "(tiada teks)"}</b>{" "}
+                    {u.time ? <span style={{ color: "#777" }}>({u.time})</span> : null}{" "}
+                    {u._src ? <span style={{ color: "#777" }}>[{u._src}]</span> : null}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <div style={{ color: "#666" }}>Tiada unassigned.</div>
+            )}
           </div>
         </div>
+      )}
+    </div>
 
-        {!clusters.length ? (
-          <div style={{ marginTop: 12, color: "#666" }}>Belum ada hasil clustering. Tekan Run AI (Clustering).</div>
-        ) : (
-          <div style={{ marginTop: 12, display: "grid", gap: 12 }}>
-            {clusters.map((c) => (
-              <div key={c.id} style={{ border: "1px solid #eee", borderRadius: 12, padding: 10 }}>
-                <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                  <input
-                    value={c.title}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      setClusters((prev) => prev.map((x) => (x.id === c.id ? { ...x, title: v } : x)));
-                      setAgreed(false);
-                    }}
-                    style={{
-                      fontSize: 16,
-                      fontWeight: 700,
-                      width: "100%",
-                      padding: "10px 12px",
-                      borderRadius: 10,
-                      border: "1px solid #ddd",
-                    }}
-                  />
-                  <button
-                    onClick={() => removeEmptyCluster(c.id)}
-                    disabled={busy}
-                    title="Buang cluster (manual)"
-                    style={{ height: 38 }}
-                  >
-                    Buang
-                  </button>
-                </div>
+    {/* MySPIKE Comparison */}
+    <div style={{ marginTop: 16 }}>
+      <h2>MySPIKE Comparison</h2>
+      {!cuWaOutput?.myspikeCompare ? (
+        <div style={{ color: "#666" }}>Tiada comparison lagi. Klik Run AI Comparison (MySPIKE).</div>
+      ) : (
+        <pre style={{ background: "#0b1020", color: "#e7e7e7", padding: 12, borderRadius: 12, overflowX: "auto", fontSize: 12 }}>
+          {JSON.stringify(cuWaOutput.myspikeCompare, null, 2)}
+        </pre>
+      )}
+    </div>
 
-                {/* ✅ PAPAR SENARAI AKTIVITI DALAM CLUSTER */}
-                <div style={{ marginTop: 10 }}>
-                  {(c.items || []).length ? (
-                    <ul style={{ margin: 0, paddingLeft: 18 }}>
-                      {c.items.map((it) => (
-                        <li key={it.id} style={{ margin: "6px 0", lineHeight: 1.35 }}>
-                          <span style={{ fontWeight: 600 }}>{it.activity || "(tiada teks)"}</span>
-                          {it.time ? (
-                            <span style={{ color: "#777", marginLeft: 10, fontSize: 12 }}>({it.time})</span>
-                          ) : null}
-                          {it._src ? (
-                            <span style={{ color: "#999", marginLeft: 10, fontSize: 12 }}>[{it._src}]</span>
-                          ) : null}
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <div style={{ color: "#888", fontSize: 13 }}>Tiada aktiviti dalam cluster ini.</div>
-                  )}
-                </div>
+    {/* CU/WA OUTPUT */}
+    <div style={{ marginTop: 16 }}>
+      <h2>CU/WA (hasil Apply)</h2>
 
-                {/* Quick move helper (optional) */}
-                {(unassigned || []).length ? (
-                  <div style={{ marginTop: 10, borderTop: "1px dashed #eee", paddingTop: 10 }}>
-                    <div style={{ fontSize: 12, color: "#666", marginBottom: 6 }}>
-                      Pindah aktiviti dari <b>Unassigned</b> ke cluster ini:
-                    </div>
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                      {unassigned.slice(0, 8).map((u) => (
-                        <button
-                          key={u.id}
-                          disabled={busy}
-                          onClick={() => {
-                            // pindah unassigned -> cluster
-                            setUnassigned((prev) => prev.filter((x) => x.id !== u.id));
-                            setClusters((prev) =>
-                              prev.map((x) => (x.id === c.id ? { ...x, items: [...(x.items || []), u] } : x))
-                            );
-                            setAgreed(false);
-                          }}
-                          style={{ height: 30, fontSize: 12 }}
-                          title={u.activity}
-                        >
-                          + {String(u.activity || "").slice(0, 26)}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-            ))}
-
-            {/* UNASSIGNED */}
-            <div style={{ border: "1px solid #eee", borderRadius: 12, padding: 10 }}>
-              <div style={{ fontWeight: 800, marginBottom: 8 }}>Unassigned</div>
-              {unassigned.length ? (
-                <ul style={{ margin: 0, paddingLeft: 18 }}>
-                  {unassigned.map((u) => (
-                    <li key={u.id} style={{ margin: "6px 0", lineHeight: 1.35 }}>
-                      <span style={{ fontWeight: 600 }}>{u.activity || "(tiada teks)"}</span>
-                      {u.time ? <span style={{ color: "#777", marginLeft: 10, fontSize: 12 }}>({u.time})</span> : null}
-                      {u._src ? <span style={{ color: "#999", marginLeft: 10, fontSize: 12 }}>[{u._src}]</span> : null}
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <div style={{ color: "#888", fontSize: 13 }}>Tiada unassigned.</div>
+      {!cuWaOutput ? (
+        <div style={{ color: "#666" }}>
+          Tiada output CU/WA. Klik Apply AI (Merge) atau Reload CU (cus).
+          {clusterResult?.generatedAt ? (
+            <div style={{ marginTop: 6, color: "#777" }}>
+              cluster generatedAt: {String(clusterResult.generatedAt)}
+            </div>
+          ) : null}
+        </div>
+      ) : (
+        <div style={{ marginTop: 8 }}>
+          <div style={{ marginBottom: 10, color: "#555", fontSize: 13 }}>
+            sessionId: <b>{String(cuWaOutput?.sessionId || "-")}</b>
+            {" | "}
+            appliedAt:{" "}
+            <b>
+              {String(
+                cuWaOutput?.appliedAt ||
+                  cuWaOutput?.appliedAtISO ||
+                  cuWaOutput?.applied_at ||
+                  "-"
               )}
-            </div>
+            </b>
           </div>
-        )}
-      </div>
 
-      {/* MySPIKE Comparison */}
-      <div style={{ marginTop: 18 }}>
-        <h2 style={{ marginBottom: 8 }}>MySPIKE Comparison</h2>
-        {!cuWaOutput?.myspikeCompare ? (
-          <div style={{ color: "#666" }}>Tiada comparison lagi. Klik Run AI Comparison (MySPIKE).</div>
-        ) : (
-          <pre
-            style={{
-              background: "#0b1020",
-              color: "#e7e7e7",
-              padding: 12,
-              borderRadius: 12,
-              overflowX: "auto",
-              fontSize: 12,
-            }}
-          >
-            {JSON.stringify(cuWaOutput.myspikeCompare, null, 2)}
-          </pre>
-        )}
-      </div>
+          {(Array.isArray(cuWaOutput?.cus) ? cuWaOutput.cus : []).map((cu, idx) => {
+            const cuId = String(cu?.cuId || `CU-${String(idx + 1).padStart(2, "0")}`);
+            const cuTitle = String(cu?.cuTitle || cu?.title || "Untitled CU");
+            const activities = Array.isArray(cu?.activities) ? cu.activities : [];
 
-      {/* CU/WA OUTPUT */}
-      <div style={{ marginTop: 18 }}>
-        <h2 style={{ marginBottom: 8 }}>CU/WA (hasil Apply)</h2>
-        {!cuWaOutput ? (
-          <div style={{ color: "#666" }}>
-            Tiada output CU/WA. Klik Apply AI (Merge) atau Reload CU (cus).
-            {clusterResult?.generatedAt ? (
-              <div style={{ marginTop: 6, fontSize: 12, color: "#888" }}>
-                cluster generatedAt: {String(clusterResult.generatedAt)}
+            return (
+              <div
+                key={`${cuId}_${idx}`}
+                style={{
+                  border: "1px solid #e5e5e5",
+                  borderRadius: 8,
+                  padding: 12,
+                  marginBottom: 12,
+                  background: "#fff",
+                }}
+              >
+                <div style={{ fontWeight: 700, marginBottom: 6 }}>
+                  {cuId}: {cuTitle}
+                </div>
+
+                <ul style={{ margin: "6px 0 0 18px" }}>
+                  {activities.map((wa, j) => {
+                    const waId = String(wa?.waId || `WA-${String(j + 1).padStart(2, "0")}`);
+                    const waTitle = String(wa?.waTitle || wa?.title || `Aktiviti ${j + 1}`);
+                    return (
+                      <li key={`${waId}_${j}`} style={{ margin: "4px 0" }}>
+                        <b>{waId}:</b> {waTitle}
+                      </li>
+                    );
+                  })}
+                </ul>
               </div>
-            ) : null}
-          </div>
-        ) : (
-
-      {cuWaOutput && (
-  <div style={{ marginTop: 8 }}>
-    <div style={{ marginBottom: 10, color: "#555", fontSize: 13 }}>
-      sessionId: <b>{String(cuWaOutput?.sessionId || "-")}</b>
-      {" | "}
-      appliedAt:{" "}
-      <b>
-        {String(
-          cuWaOutput?.appliedAt ||
-            cuWaOutput?.appliedAtISO ||
-            cuWaOutput?.applied_at ||
-            "-"
-        )}
-      </b>
-    </div>
-
-    {(Array.isArray(cuWaOutput?.cus) ? cuWaOutput.cus : []).map((cu, idx) => {
-      const cuId = String(cu?.cuId || `CU-${String(idx + 1).padStart(2, "0")}`);
-      const cuTitle = String(cu?.cuTitle || cu?.title || "Untitled CU");
-      const activities = Array.isArray(cu?.activities) ? cu.activities : [];
-
-      return (
-        <div
-          key={`${cuId}_${idx}`}
-          style={{
-            border: "1px solid #e5e5e5",
-            borderRadius: 8,
-            padding: 12,
-            marginBottom: 12,
-            background: "#fff",
-          }}
-        >
-          <div style={{ fontWeight: 700, marginBottom: 6 }}>
-            {cuId}: {cuTitle}
-          </div>
-
-          <ul style={{ margin: "6px 0 0 18px" }}>
-            {activities.map((wa, j) => {
-              const waId = String(wa?.waId || `WA-${String(j + 1).padStart(2, "0")}`);
-              const waTitle = String(wa?.waTitle || wa?.title || `Aktiviti ${j + 1}`);
-
-              return (
-                <li key={`${waId}_${j}`} style={{ margin: "4px 0" }}>
-                  <b>{waId}:</b> {waTitle}
-                </li>
-              );
-            })}
-          </ul>
+            );
+          })}
         </div>
-      );
-    })}
-  </div>
-)}
-
-
-        )}
-      </div>
+      )}
     </div>
-  );
-}
+  </div>
+);
