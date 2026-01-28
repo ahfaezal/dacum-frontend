@@ -59,7 +59,12 @@ function normalizeCpcPayload(payload, fallback = {}) {
       generatedAt,
       cus: cus.map((c, idx) => ({
         cuTitle: safeStr(c?.cuTitle || c?.title || c?.name || `CU-${pad2(idx + 1)}`),
-        activities: (Array.isArray(c?.activities) ? c.activities : Array.isArray(c?.was) ? c.was : [])
+        activities: (
+          Array.isArray(c?.activities) ? c.activities :
+          Array.isArray(c?.wa) ? c.wa :
+          Array.isArray(c?.was) ? c.was :
+          []
+        )
           .filter(Boolean)
           .map((a, j) => ({
             waTitle: safeStr(a?.waTitle || a?.title || a?.name || `Aktiviti ${j + 1}`),
@@ -76,7 +81,12 @@ function normalizeCpcPayload(payload, fallback = {}) {
       generatedAt,
       cus: payload.cus.map((c, idx) => ({
         cuTitle: safeStr(c?.cuTitle || c?.title || c?.name || `CU-${pad2(idx + 1)}`),
-        activities: (Array.isArray(c?.activities) ? c.activities : Array.isArray(c?.was) ? c.was : [])
+        activities: (
+          Array.isArray(c?.activities) ? c.activities :
+          Array.isArray(c?.wa) ? c.wa :
+          Array.isArray(c?.was) ? c.was :
+          []
+        )
           .filter(Boolean)
           .map((a, j) => ({
             waTitle: safeStr(a?.waTitle || a?.title || a?.name || `Aktiviti ${j + 1}`),
@@ -93,7 +103,12 @@ function normalizeCpcPayload(payload, fallback = {}) {
       generatedAt,
       cus: payload.map((c, idx) => ({
         cuTitle: safeStr(c?.cuTitle || c?.title || c?.name || `CU-${pad2(idx + 1)}`),
-        activities: (Array.isArray(c?.activities) ? c.activities : Array.isArray(c?.was) ? c.was : [])
+        activities: (
+          Array.isArray(c?.activities) ? c.activities :
+          Array.isArray(c?.wa) ? c.wa :
+          Array.isArray(c?.was) ? c.was :
+          []
+        )
           .filter(Boolean)
           .map((a, j) => ({
             waTitle: safeStr(a?.waTitle || a?.title || a?.name || `Aktiviti ${j + 1}`),
@@ -115,7 +130,12 @@ function normalizeCpcPayload(payload, fallback = {}) {
       generatedAt,
       cus: maybeCus.map((c, idx) => ({
         cuTitle: safeStr(c?.cuTitle || c?.title || c?.name || `CU-${pad2(idx + 1)}`),
-        activities: (Array.isArray(c?.activities) ? c.activities : Array.isArray(c?.was) ? c.was : [])
+        activities: (
+          Array.isArray(c?.activities) ? c.activities :
+          Array.isArray(c?.wa) ? c.wa :
+          Array.isArray(c?.was) ? c.was :
+          []
+        )
           .filter(Boolean)
           .map((a, j) => ({
             waTitle: safeStr(a?.waTitle || a?.title || a?.name || `Aktiviti ${j + 1}`),
