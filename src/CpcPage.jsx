@@ -48,30 +48,29 @@ function normalizeCpcPayload(payload, fallback = {}) {
   let generatedAt = payload?.generatedAt || payload?.generated || nowIso;
 
   // 1) If already has teras blocks
-  if (Array.isArray(payload?.teras) && payload.teras.length) {
-    // Flatten teras->cus
-    const cus = payload.teras
-      .flatMap((t) => (Array.isArray(t?.cus) ? t.cus : []))
-      .filter(Boolean);
-    return {
-      sessionId,
-      lang,
-      generatedAt,
-      cus: cus.map((c, idx) => ({
-        cuTitle: safeStr(c?.cuTitle || c?.title || c?.name || `CU-${pad2(idx + 1)}`),
-        activities: (
-          Array.isArray(c?.activities) ? c.activities :
-          Array.isArray(c?.wa) ? c.wa :
-          Array.isArray(c?.was) ? c.was :
-          []
-        )
-          .filter(Boolean)
-          .map((a, j) => ({
-            waTitle: safeStr(a?.waTitle || a?.title || a?.name || `Aktiviti ${j + 1}`),
-          })),
+if (Array.isArray(payload?.cus) && payload.cus.length) {
+  return {
+    sessionId,
+    lang,
+    generatedAt,
+    cus: payload.cus.map((c, idx) => ({
+      cuCode: safeStr(c?.cuCode || `C${pad2(idx + 1)}`),
+      cuTitle: safeStr(
+        c?.cuTitle || c?.title || c?.name || `CU-${pad2(idx + 1)}`
+      ),
+      activities: (
+        Array.isArray(c?.activities) ? c.activities :
+        Array.isArray(c?.wa) ? c.wa :
+        []
+      ).map((a, j) => ({
+        waCode: safeStr(a?.waCode || `W${pad2(j + 1)}`),
+        waTitle: safeStr(
+          a?.waTitle || a?.title || a?.name || `Aktiviti ${j + 1}`
+        ),
       })),
-    };
-  }
+    })),
+  };
+}
 
   // 2) If payload has cus
   if (Array.isArray(payload?.cus)) {
