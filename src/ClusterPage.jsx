@@ -642,57 +642,61 @@ async function loadCards(sid) {
             ) : null}
           </div>
         ) : (
-{(() => {
-  const o = cuWaOutput || {};
-  const sessionId = String(o.sessionId || "");
-  const appliedAt = String(o.appliedAt || o.appliedAtISO || o.applied_at || "");
-  const cus = Array.isArray(o.cus) ? o.cus : [];
 
-  return (
-    <div style={{ marginTop: 8 }}>
-      <div style={{ marginBottom: 10, color: "#555", fontSize: 13 }}>
-        <span>sessionId: <b>{sessionId || "-"}</b></span>
-        {appliedAt ? <span> | appliedAt: <b>{appliedAt}</b></span> : null}
-      </div>
-
-      {cus.map((cu, i) => {
-        const cuId = String(cu?.cuId || `CU-${String(i + 1).padStart(2, "0")}`);
-        const cuTitle = String(cu?.cuTitle || cu?.title || "Untitled CU");
-        const activities = Array.isArray(cu?.activities) ? cu.activities : [];
-
-        return (
-          <div
-            key={`${cuId}_${i}`}
-            style={{
-              border: "1px solid #e5e5e5",
-              borderRadius: 8,
-              padding: 12,
-              marginBottom: 12,
-              background: "#fff",
-            }}
-          >
-            <div style={{ fontWeight: 700, marginBottom: 6 }}>
-              {cuId}: {cuTitle}
-            </div>
-
-            <ul style={{ margin: "6px 0 0 18px" }}>
-              {activities.map((wa, j) => {
-                const waId = String(wa?.waId || `WA-${String(j + 1).padStart(2, "0")}`);
-                const waTitle = String(wa?.waTitle || wa?.title || `Aktiviti ${j + 1}`);
-
-                return (
-                  <li key={`${waId}_${j}`} style={{ margin: "4px 0" }}>
-                    <b>{waId}:</b> {waTitle}
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-        );
-      })}
+      {cuWaOutput && (
+  <div style={{ marginTop: 8 }}>
+    <div style={{ marginBottom: 10, color: "#555", fontSize: 13 }}>
+      sessionId: <b>{String(cuWaOutput?.sessionId || "-")}</b>
+      {" | "}
+      appliedAt:{" "}
+      <b>
+        {String(
+          cuWaOutput?.appliedAt ||
+            cuWaOutput?.appliedAtISO ||
+            cuWaOutput?.applied_at ||
+            "-"
+        )}
+      </b>
     </div>
-  );
-})()}
+
+    {(Array.isArray(cuWaOutput?.cus) ? cuWaOutput.cus : []).map((cu, idx) => {
+      const cuId = String(cu?.cuId || `CU-${String(idx + 1).padStart(2, "0")}`);
+      const cuTitle = String(cu?.cuTitle || cu?.title || "Untitled CU");
+      const activities = Array.isArray(cu?.activities) ? cu.activities : [];
+
+      return (
+        <div
+          key={`${cuId}_${idx}`}
+          style={{
+            border: "1px solid #e5e5e5",
+            borderRadius: 8,
+            padding: 12,
+            marginBottom: 12,
+            background: "#fff",
+          }}
+        >
+          <div style={{ fontWeight: 700, marginBottom: 6 }}>
+            {cuId}: {cuTitle}
+          </div>
+
+          <ul style={{ margin: "6px 0 0 18px" }}>
+            {activities.map((wa, j) => {
+              const waId = String(wa?.waId || `WA-${String(j + 1).padStart(2, "0")}`);
+              const waTitle = String(wa?.waTitle || wa?.title || `Aktiviti ${j + 1}`);
+
+              return (
+                <li key={`${waId}_${j}`} style={{ margin: "4px 0" }}>
+                  <b>{waId}:</b> {waTitle}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      );
+    })}
+  </div>
+)}
+
 
         )}
       </div>
