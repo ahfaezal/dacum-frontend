@@ -106,43 +106,42 @@ function cleanQuotesAndRefs(t) {
 }
 
 // ✅ WS: ringkaskan, tapi kekalkan maksud unik
-function normalizeWsTitle(rawWs = "", waTitle = "") {
-  let t = cleanQuotesAndRefs(rawWs);
+function normalizeWsTitle(raw = "") {
+  let t = safeStr(raw);
 
-  // buang pengulangan WA title jika ada (tanpa buang isi langkah)
-  const waT = safeStr(waTitle);
-  if (waT) {
-    const re = new RegExp(escapeRegExp(waT), "ig");
-    t = t.replace(re, "").replace(/\s+/g, " ").trim();
-  }
+  // buang frasa mengganggu tapi KEKALKAN maksud asal WS
+  t = t.replace(/\bbagi\s+"[^"]+"\s*/gi, "");         // buang: bagi "...."
+  t = t.replace(/\buntuk\s+"[^"]+"\s*/gi, "");        // buang: untuk "...."
+  t = t.replace(/"[^"]+"/g, "");                      // buang petikan "...."
 
-  // buang frasa pengisi yang tak perlu (kekal objek penting)
-  t = t.replace(/\b(bagi|untuk)\b\s*/gi, "");
-  t = t.replace(/\b(yang berkaitan|berkaitan)\b/gi, "");
+  // buang ekor yang terlalu panjang
+  t = t.replace(/\s+berdasarkan\s+SOP\/rekod.*$/i, "");
+  t = t.replace(/\s+berdasarkan\s+SOP.*$/i, "");
+  t = t.replace(/\s+berdasarkan\s+.*$/i, "");
+
+  // kemaskan whitespace & tanda baca
   t = t.replace(/\s+/g, " ").trim();
+  t = t.replace(/\s*\.\s*$/g, ""); // buang titik hujung
 
-  // pastikan ayat jadi “frasa kerja” ringkas (tanpa noktah panjang)
-  t = t.replace(/\.$/, "");
+  // kalau masih terlalu panjang, ambil klausa pertama (bukan template)
+  // contoh: "Laksanakan ... dan rekodkan ..." -> ambil sehingga koma/titik pertama
+  const cut = t.split(/[.;]/)[0].trim();
 
-  return t || "xxx";
+  // fallback
+  return cut || "xxx";
 }
 
-// ✅ PC: buang “Telah” berganda, kemaskan, tetapi kekalkan isi unik
 function normalizePc(rawPc = "") {
   let p = safeStr(rawPc);
 
-  // buang "Telah" di depan sahaja (bukan replace ayat jadi template)
+  // buang "Telah" di depan dan elak "telah ... telah ..."
   p = p.replace(/^\s*telah\s+/i, "");
-
-  // elak "telah ... telah ..." (buang telah kedua/lebih)
-  p = p.replace(/\btelah\s+/gi, "");
-
-  // kemas whitespace
+  p = p.replace(/\bTelah\s+/g, ""); // buang "Telah" berulang
+  p = p.replace(/\btelah\s+telah\b/gi, "telah");
   p = p.replace(/\s+/g, " ").trim();
 
-  // pastikan ada noktah untuk gaya PC
+  // kemaskan: pastikan ada noktah hujung
   if (p && !/[.!?]$/.test(p)) p += ".";
-
   return p || "xxx";
 }
 
