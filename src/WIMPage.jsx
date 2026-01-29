@@ -6,6 +6,7 @@ export default function WIMPage() {
   const [level, setLevel] = useState("");
   const [prompt, setPrompt] = useState("");
 
+  
   return (
     <div className="wim-container">
       {/* LEFT PANEL */}
