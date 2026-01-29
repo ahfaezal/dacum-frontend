@@ -44,11 +44,12 @@ function Router() {
   if (hash.startsWith("#/cpc")) return <CpcPage />;
 
   // FASA 3: CP
-  // ⚠️ Susunan ini betul: cp-editor mesti di atas cp (supaya tak kena match "#/cp")
   if (hash.startsWith("#/cp-editor")) return <CpEditor />;
   if (hash.startsWith("#/cp")) return <CpDashboard />;
-  if (hash.startsWith("#/cp-editor")) return <CoCUEditor />;
-  if (hash.startsWith("#/cp")) return <CoCUDashboard />;
+
+  // FASA 4: CoCU
+  if (hash.startsWith("#/cocu-editor")) return <CoCUEditor />;
+  if (hash.startsWith("#/cocu-dashboard")) return <CoCUDashboard />;
 
   /**
    * DEFAULT:
