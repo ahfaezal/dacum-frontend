@@ -83,44 +83,118 @@ function pad2(n) {
   return String(x).padStart(2, "0");
 }
 
-function parseWsNo(wsCode = "") {
-  // "2.3" -> [2,3]
-  const m = String(wsCode || "").match(/(\d+)\.(\d+)/);
-  if (!m) return [9999, 9999];
-  return [Number(m[1]) || 9999, Number(m[2]) || 9999];
+// ===============================
+// Ringkas WS/PC tanpa hilang “keunikan WA”
+// ===============================
+function stripTrailingDot(s) {
+  return safeStr(s).replace(/\s*\.\s*$/, "").trim();
 }
 
-function cleanWsText(raw = "") {
-  let t = safeStr(raw);
-
-  // buang frasa mengganggu tetapi kekalkan maksud unik
-  t = t.replace(/\bbagi\s+"[^"]+"\s*/gi, "");
-  t = t.replace(/\buntuk\s+"[^"]+"\s*/gi, "");
-  t = t.replace(/"[^"]+"/g, "");
-
-  // buang ekor yang terlalu panjang/umum
-  t = t.replace(/\s+berdasarkan\s+SOP\/rekod.*$/i, "");
-  t = t.replace(/\s+berdasarkan\s+SOP.*$/i, "");
-  t = t.replace(/\s+berdasarkan\s+.*$/i, "");
-
-  // kemas whitespace & titik hujung
-  t = t.replace(/\s+/g, " ").trim();
-  t = t.replace(/\s*\.\s*$/g, "");
-
-  // ringkaskan sedikit (ambil klausa pertama), TANPA template
-  const cut = t.split(/[.;]/)[0].trim();
-  return cut || "xxx";
+function normalizeSpaces(s) {
+  return safeStr(s).replace(/\s+/g, " ").trim();
 }
 
-function cleanPcText(rawPc = "") {
+function removeQuotedParts(s) {
+  // buang petikan "...", dan frasa bagi/untuk "..."
+  let x = safeStr(s);
+  x = x.replace(/\bbagi\s+"[^"]+"\s*/gi, "");
+  x = x.replace(/\buntuk\s+"[^"]+"\s*/gi, "");
+  x = x.replace(/"[^"]+"/g, "");
+  return normalizeSpaces(x);
+}
+
+// Ambil “objek WA” ringkas untuk dijadikan tag unik
+function waToShortTag(waTitle) {
+  const t = stripTrailingDot(waTitle);
+  // buang kata kerja permulaan yang biasa
+  const cleaned = t
+    .replace(/^(laksana(kan)?|buat|urus|selaras|semak|jalankan|pantau)\s+/i, "")
+    .trim();
+
+  // ambil 3-5 perkataan awal (cukup untuk bezakan WA)
+  const words = cleaned.split(/\s+/).filter(Boolean);
+  const take = Math.max(3, Math.min(5, words.length));
+  return words.slice(0, take).join(" ");
+}
+
+// Ringkaskan WS ikut pola, tapi tambah tag WA supaya tak repeat
+function normalizeWsTitle(rawWsTitle = "", waTitle = "", wsCode = "") {
+  const tag = waToShortTag(waTitle);
+  const base = normalizeSpaces(rawWsTitle);
+
+  const lower = base.toLowerCase();
+
+  // buang ekor “berdasarkan ...” (terlalu panjang)
+  let t = base
+    .replace(/\s+berdasarkan\s+SOP\/rekod.*$/i, "")
+    .replace(/\s+berdasarkan\s+SOP.*$/i, "")
+    .replace(/\s+berdasarkan\s+.*$/i, "");
+  t = removeQuotedParts(t);
+  t = stripTrailingDot(t);
+
+  // POLA 1: “Semak keperluan kerja ...”
+  if (lower.includes("semak") && lower.includes("keperluan kerja")) {
+    return tag ? `Semak keperluan kerja (${tag})` : "Semak keperluan kerja";
+  }
+
+  // POLA 2: “Sediakan dokumen/borang/jadual ...”
+  if (lower.includes("sediakan") && (lower.includes("dokumen") || lower.includes("borang") || lower.includes("jadual"))) {
+    return tag ? `Sediakan dokumen pelaksanaan (${tag})` : "Sediakan dokumen pelaksanaan";
+  }
+
+  // POLA 3: “Laksanakan ... dan rekodkan ...”
+  if (lower.includes("laksana") && (lower.includes("rekod") || lower.includes("direkod"))) {
+    // guna kata kerja asal WA jika boleh: contoh WA bermula "Buat penilaian..." -> "Laksana penilaian..."
+    const waClean = stripTrailingDot(waTitle);
+    // ringkaskan WA sendiri sebagai WS #3
+    if (waClean) return waClean;
+    return tag ? `Laksanakan aktiviti (${tag})` : "Laksanakan aktiviti";
+  }
+
+  // fallback: ambil klausa pertama tapi tambah tag jika terlalu umum
+  const firstClause = t.split(/[.;]/)[0].trim();
+  if (!firstClause) return "xxx";
+
+  // jika klausa terlalu generik, tambah tag
+  const generic =
+    /^(semak|sediakan|laksana|laksanakan|urus|jalankan|pantau)\b/i.test(firstClause) &&
+    firstClause.split(/\s+/).length <= 3;
+
+  return generic && tag ? `${firstClause} (${tag})` : firstClause;
+}
+
+// PC: kemaskan “Telah ... telah ...”, dan tambah konteks WA supaya tak sama bulat-bulat
+function normalizePc(rawPc = "", waTitle = "", wsTitleFinal = "") {
   let p = safeStr(rawPc);
 
-  // buang "Telah" di depan dan elak "telah ... telah ..."
+  // buang “Telah ” di depan dan elak berganda
   p = p.replace(/^\s*telah\s+/i, "");
   p = p.replace(/\bTelah\s+/g, "");
   p = p.replace(/\btelah\s+telah\b/gi, "telah");
-  p = p.replace(/\s+/g, " ").trim();
+  p = normalizeSpaces(p);
 
+  const tag = waToShortTag(waTitle);
+  const lower = p.toLowerCase();
+
+  // Standardkan gaya (ringkas tapi outcome-based)
+  if (lower.includes("keperluan kerja") && (lower.includes("disemak") || lower.includes("direkod"))) {
+    const s = "Keperluan kerja telah disemak dan direkodkan berdasarkan SOP.";
+    return tag ? `${s} (${tag}).` : s;
+  }
+
+  if (lower.includes("dokumen") || lower.includes("borang") || lower.includes("jadual")) {
+    const s = "Dokumen pelaksanaan telah disediakan berdasarkan senarai semak.";
+    return tag ? `${s} (${tag}).` : s;
+  }
+
+  if (lower.includes("pelaksanaan") || lower.includes("direkod") || lower.includes("bukti")) {
+    // guna WS final jika bagus
+    const stem = wsTitleFinal ? stripTrailingDot(wsTitleFinal) : "Pelaksanaan kerja";
+    const s = `${stem} telah direkodkan bersama bukti seperti laporan/rekod/borang berkaitan.`;
+    return normalizeSpaces(s);
+  }
+
+  // fallback: pastikan ada noktah
   if (p && !/[.!?]$/.test(p)) p += ".";
   return p || "xxx";
 }
@@ -128,15 +202,12 @@ function cleanPcText(rawPc = "") {
 /**
  * Normalize draft yang balik dari backend (kalis peluru).
  * Menyokong struktur:
- * - { cpDraft: { waItems:[ {waCode,waTitle, ws:[{wsCode,wsTitle,pc}]} ] } }
+ * - { ok:true, cpDraft:{ waItems:[ {waCode,waTitle, ws:[{wsCode,wsTitle,pc}]} ] } }
  * - { waItems:[...] }
  * - { wa:[...] } / { items:[...] }
- *
- * IMPORTANT:
- * - padan WA ikut waCode (bukan index)
- * - padan WS ikut wsCode
  */
 function normalizeDraftFromApi(apiObjOrDraft, cuFromCpc) {
+  // ✅ ambil root sebenar jika backend bungkus bawah cpDraft/draft/cp
   const root =
     apiObjOrDraft?.cpDraft ||
     apiObjOrDraft?.draft ||
@@ -145,79 +216,68 @@ function normalizeDraftFromApi(apiObjOrDraft, cuFromCpc) {
 
   const out = { waItems: [] };
 
-  const waItemsFromApi =
+  // 1) Cuba ambil WA grouping daripada backend
+  const waItems =
     (Array.isArray(root?.waItems) && root.waItems) ||
     (Array.isArray(root?.waList) && root.waList) ||
     (Array.isArray(root?.wa) && root.wa) ||
     (Array.isArray(root?.items) && root.items) ||
     [];
 
-  const waFromCpc = extractWaListFromCu(cuFromCpc) || [];
+  if (waItems.length) {
+    const waFromCpc = extractWaListFromCu(cuFromCpc) || [];
 
-  // bina map CPC WA by waCode
-  const cpcWaByCode = {};
-  for (let i = 0; i < waFromCpc.length; i++) {
-    const w = waFromCpc[i];
-    const code = getWaIdCanonical(w) || `w${pad2(i + 1)}`;
-    cpcWaByCode[String(code).toLowerCase()] = w;
-  }
+    out.waItems = waItems.map((w, wi) => {
+      const cpcWa = waFromCpc[wi];
 
-  // jika tiada data draft dari backend, fallback dari CPC
-  if (!waItemsFromApi.length) {
-    out.waItems = waFromCpc.map((wa, wi) => ({
-      waCode: getWaIdCanonical(wa) || `w${pad2(wi + 1)}`,
-      waTitle: getWaTitle(wa) || `WA ${wi + 1}`,
-      ws: [],
-    }));
+      const waCode = safeStr(
+        w?.waCode || w?.code || w?.id || cpcWa?.waCode || `w${pad2(wi + 1)}`
+      ).toLowerCase();
+
+      const waTitle = safeStr(
+        w?.waTitle || w?.title || w?.name || cpcWa?.waTitle || `WA ${wi + 1}`
+      );
+
+      // 2) WS array (backend mungkin guna ws / wsItems / steps / workSteps)
+      const wsArr =
+        (Array.isArray(w?.ws) && w.ws) ||
+        (Array.isArray(w?.wsItems) && w.wsItems) ||
+        (Array.isArray(w?.workSteps) && w.workSteps) ||
+        (Array.isArray(w?.steps) && w.steps) ||
+        [];
+
+      const ws = wsArr.map((s, si) => {
+        const wsCode = safeStr(s?.wsCode || s?.code || `${wi + 1}.${si + 1}`);
+
+        const rawWsTitle = safeStr(s?.wsTitle || s?.title || s?.text || "xxx");
+        const wsTitle = normalizeWsTitle(rawWsTitle, waTitle, wsCode);
+
+        // PC mungkin string atau array/object
+        let pcVal = s?.pc ?? s?.performanceCriteria ?? s?.criteria ?? "xxx";
+        if (typeof pcVal === "object" && pcVal && !Array.isArray(pcVal)) {
+          // ada kemungkinan { pcText: "..." }
+          pcVal = pcVal.pcText ?? pcVal.text ?? pcVal.value ?? "xxx";
+        }
+        if (Array.isArray(pcVal)) pcVal = pcVal.map((x) => safeStr(x)).filter(Boolean).join("; ");
+
+        const pc = normalizePc(pcVal, waTitle, wsTitle);
+
+        return { wsCode, wsTitle, pc };
+      });
+
+      return { waCode, waTitle, ws };
+    });
+
     return out;
   }
 
-  // map API WA
-  const apiWaByCode = {};
-  for (let i = 0; i < waItemsFromApi.length; i++) {
-    const w = waItemsFromApi[i] || {};
-    const code = safeStr(w?.waCode || w?.code || w?.id).toLowerCase();
-    if (code) apiWaByCode[code] = w;
-  }
-
-  // susun output ikut CPC order (locked)
-  out.waItems = waFromCpc.map((cpcWa, wi) => {
-    const waCodeCanon = (getWaIdCanonical(cpcWa) || `w${pad2(wi + 1)}`).toLowerCase();
-    const apiWa = apiWaByCode[waCodeCanon] || {};
-
-    const waCode = safeStr(apiWa?.waCode || apiWa?.code || apiWa?.id || waCodeCanon).toLowerCase();
-    const waTitle = safeStr(apiWa?.waTitle || apiWa?.title || apiWa?.name || getWaTitle(cpcWa) || `WA ${wi + 1}`);
-
-    // WS array (backend mungkin guna ws / wsItems / steps / workSteps)
-    const wsArr =
-      (Array.isArray(apiWa?.ws) && apiWa.ws) ||
-      (Array.isArray(apiWa?.wsItems) && apiWa.wsItems) ||
-      (Array.isArray(apiWa?.workSteps) && apiWa.workSteps) ||
-      (Array.isArray(apiWa?.steps) && apiWa.steps) ||
-      [];
-
-    const ws = wsArr
-      .map((s, si) => {
-        const wsCode = safeStr(s?.wsCode || s?.code || `${wi + 1}.${si + 1}`);
-        const wsTitleRaw = safeStr(s?.wsTitle || s?.title || s?.text || "xxx");
-        let pcVal = s?.pc ?? s?.performanceCriteria ?? s?.criteria ?? "xxx";
-        if (Array.isArray(pcVal)) pcVal = pcVal.map((x) => safeStr(x)).filter(Boolean).join("; ");
-
-        return {
-          wsCode,
-          wsTitle: cleanWsText(wsTitleRaw),
-          pc: cleanPcText(pcVal),
-        };
-      })
-      .sort((a, b) => {
-        const [a1, a2] = parseWsNo(a.wsCode);
-        const [b1, b2] = parseWsNo(b.wsCode);
-        if (a1 !== b1) return a1 - b1;
-        return a2 - b2;
-      });
-
-    return { waCode, waTitle, ws };
-  });
+  // 3) Kalau backend tak bagi grouping, fallback dari CPC supaya UI tak rosak
+  const waFromCpc = extractWaListFromCu(cuFromCpc) || [];
+  out.waItems = waFromCpc.map((wa, wi) => ({
+    waCode: getWaIdCanonical(wa) || `w${pad2(wi + 1)}`,
+    waTitle: getWaTitle(wa) || `WA ${wi + 1}`,
+    ws: [],
+  }));
 
   return out;
 }
@@ -241,6 +301,20 @@ export default function CpDashboard() {
   function goCluster() {
     const sid = encodeURIComponent(safeStr(sessionId));
     window.location.hash = `#/cluster?session=${sid}`;
+  }
+
+  function clearDraftCache() {
+    if (!sessionId) return;
+    try {
+      const prefix = `cpDraft:${sessionId}:`;
+      const keys = [];
+      for (let i = 0; i < sessionStorage.length; i++) {
+        const k = sessionStorage.key(i);
+        if (k && k.startsWith(prefix)) keys.push(k);
+      }
+      keys.forEach((k) => sessionStorage.removeItem(k));
+    } catch (e) {}
+    setDraftCache({});
   }
 
   async function loadCpc() {
@@ -280,14 +354,6 @@ export default function CpDashboard() {
     }
   }, [sessionId]);
 
-  /**
-   * AI Assisted: Generate WS+PC untuk semua WA dalam CU
-   * LOCKED: WA & CU kekal ikut CPC
-   * Rule:
-   * - minimum 3 WS per WA
-   * - 1 PC per WS
-   * - PC gaya "telah ..." (past tense, measurable)
-   */
   async function generateWsPcForCu(cuCodeCanon) {
     const cuCode = safeStr(cuCodeCanon).toLowerCase();
     if (!sessionId || !cuCode) {
@@ -306,7 +372,7 @@ export default function CpDashboard() {
       const cuTitle = getCuTitle(cu);
       const waObjs = extractWaListFromCu(cu) || [];
 
-      // WA LOCKED: hantar sebagai objek (code+title) supaya backend boleh kekalkan ID
+      // WA LOCKED: hantar sebagai objek (code+title)
       const waList = waObjs
         .map((w) => ({
           waCode: getWaIdCanonical(w),
@@ -337,15 +403,18 @@ export default function CpDashboard() {
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j?.error || "Gagal jana WS/PC (AI Assisted).");
 
-      // ✅ normalize guna response sebenar (fungsi ini sendiri akan ambil cpDraft jika ada)
+      // ✅ normalize guna response sebenar (ambil cpDraft jika ada)
       const normalized = normalizeDraftFromApi(j, cu);
+
+      const generatedAt =
+        (j?.cpDraft || j?.draft || j?.cp)?.generatedAt || new Date().toISOString();
 
       const payloadToStore = {
         sessionId,
         cuCode,
         cuTitle,
         ...normalized,
-        generatedAt: (j?.cpDraft || j?.draft || j?.cp)?.generatedAt || new Date().toISOString(),
+        generatedAt,
       };
 
       setDraftCache((prev) => ({ ...prev, [cuCode]: payloadToStore }));
@@ -434,6 +503,9 @@ export default function CpDashboard() {
         <button className="btn" onClick={goCluster} disabled={!sessionId}>← Ke Cluster</button>
         <button className="btn" onClick={goCpc} disabled={!sessionId}>Lihat CPC</button>
         <button className="btn" onClick={() => window.print()} disabled={!sessionId}>Print (CP Table)</button>
+        <button className="btn" onClick={clearDraftCache} disabled={!sessionId} title="Buang cache cpDraft dalam sessionStorage">
+          Clear Draft Cache
+        </button>
       </div>
 
       <div style={{ marginBottom: 8 }}>
@@ -477,7 +549,7 @@ export default function CpDashboard() {
           )}
 
           {cuList.map((item, idx) => {
-            const cuCodeCanon = item.cuCodeCanon;
+            const cuCodeCanon = item.cuCodeCanon; // contoh: "c01"
             const cuTitle = item.cuTitle;
             const waList = item.waList || [];
             const isInvalid = !cuCodeCanon;
