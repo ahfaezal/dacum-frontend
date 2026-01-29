@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
 const API_BASE =
   (import.meta?.env?.VITE_API_BASE && String(import.meta.env.VITE_API_BASE)) ||
@@ -79,6 +79,10 @@ function normId(v) {
   return s;
 }
 
+function uid(prefix = "c") {
+  return `${prefix}${Date.now()}_${Math.random().toString(16).slice(2)}`;
+}
+
 /**
  * Normalize result clusters -> items(card) menggunakan:
  * - cardsById: map id -> card
@@ -92,7 +96,7 @@ function normalizeClustersFromResult(result, cardsById, cardsList) {
     const k = normId(rawId);
     if (!k) return null;
 
-    // 1) match terus pada id (UUID)
+    // 1) match terus pada id
     const byId = cardsById?.[k];
     if (byId) return byId;
 
@@ -104,7 +108,6 @@ function normalizeClustersFromResult(result, cardsById, cardsList) {
       if (list[i0]) return list[i0];
       if (list[i1]) return list[i1];
     }
-
     return null;
   };
 
@@ -182,7 +185,28 @@ export default function ClusterPage({ onBack }) {
   // Output CU/WA selepas apply / reload
   const [cuWaOutput, setCuWaOutput] = useState(null);
 
+  // UI edit state
+  const [editingClusterId, setEditingClusterId] = useState(null); // cluster.id
+  const [editingCardKey, setEditingCardKey] = useState(null); // `${bucket}:${clusterId}:${cardId}` or `u:cardId`
+  const dragRef = useRef(null); // { from: { type:'cluster'|'unassigned', clusterId? }, cardId }
+
+  // Override teks kad (edit lokal) — TAK ubah LiveBoard
+  const [overrides, setOverrides] = useState({}); // { [cardId]: { activityOverride: string } }
+
   const sidTrim = String(sessionId || "").trim();
+  const locked = agreed; // Lock selepas Agreed
+
+  function safeSetErr(e) {
+    setErr(String(e?.message || e || ""));
+  }
+
+  function getCardText(card) {
+    const id = normId(card?.id);
+    const ov = overrides?.[id]?.activityOverride;
+    return (ov !== undefined && ov !== null && String(ov).trim() !== "")
+      ? String(ov)
+      : String(card?.activity || "").trim();
+  }
 
   async function loadCards(sid) {
     const s = String(sid || "").trim();
@@ -239,8 +263,10 @@ export default function ClusterPage({ onBack }) {
 
       // agreed flag (jika backend hantar)
       setAgreed(!!result?.agreed);
+      setEditingClusterId(null);
+      setEditingCardKey(null);
     } catch (e) {
-      setErr(String(e?.message || e));
+      safeSetErr(e);
       setClusterResult(null);
       setClusters([]);
       setUnassigned([]);
@@ -261,8 +287,10 @@ export default function ClusterPage({ onBack }) {
     try {
       await apiPost(`/api/cluster/run/${encodeURIComponent(sid)}`, {});
       await loadResult();
+      setOverrides({}); // reset override selepas clustering baru (pilihan selamat)
+      setAgreed(false);
     } catch (e) {
-      setErr(String(e?.message || e));
+      safeSetErr(e);
       alert(String(e?.message || e));
     } finally {
       setBusy(false);
@@ -281,11 +309,34 @@ export default function ClusterPage({ onBack }) {
       const out = await apiGet(`/api/session/cus/${encodeURIComponent(s)}`);
       setCuWaOutput(out);
     } catch (e) {
-      setErr(String(e?.message || e));
+      safeSetErr(e);
       setCuWaOutput(null);
     } finally {
       setBusy(false);
     }
+  }
+
+  function buildDraftPayload() {
+    // Hantar draft clustering yang telah diedit panel
+    const clustersDraft = (clusters || []).map((c) => ({
+      id: String(c.id),
+      title: String(c.title || "").trim(),
+      cardIds: (c.items || []).map((it) => normId(it?.id)).filter(Boolean),
+    }));
+    const unassignedDraft = (unassigned || [])
+      .map((u) => normId(u?.id))
+      .filter(Boolean);
+
+    // overridesDraft hanya simpan yang benar-benar ada perubahan
+    const overridesDraft = {};
+    Object.keys(overrides || {}).forEach((cardId) => {
+      const v = overrides?.[cardId]?.activityOverride;
+      if (v !== undefined && v !== null && String(v).trim() !== "") {
+        overridesDraft[cardId] = { activityOverride: String(v) };
+      }
+    });
+
+    return { clustersDraft, unassignedDraft, overridesDraft };
   }
 
   async function applyMerge() {
@@ -298,7 +349,14 @@ export default function ClusterPage({ onBack }) {
     setErr("");
 
     try {
-      const r = await apiPost(`/api/cluster/apply`, { sessionId: sid });
+      const draft = buildDraftPayload();
+
+      // ✅ endpoint backend anda: POST /api/cluster/apply { sessionId }
+      // Saya tambah draft supaya backend boleh guna bila anda upgrade backend.
+      const r = await apiPost(`/api/cluster/apply`, {
+        sessionId: sid,
+        ...draft,
+      });
 
       // refresh output CU/WA
       await loadCuWaOutput(sid);
@@ -307,7 +365,7 @@ export default function ClusterPage({ onBack }) {
       setClusterResult(r);
       await loadResult();
     } catch (e) {
-      setErr(String(e?.message || e));
+      safeSetErr(e);
       alert(String(e?.message || e));
     } finally {
       setBusy(false);
@@ -321,7 +379,7 @@ export default function ClusterPage({ onBack }) {
       const r = await apiPost(`/api/myspike/index/build`, {});
       alert(`Index MySPIKE siap. Total: ${r?.total ?? "?"}`);
     } catch (e) {
-      setErr(String(e?.message || e));
+      safeSetErr(e);
       alert(String(e?.message || e));
     } finally {
       setBusy(false);
@@ -360,24 +418,177 @@ export default function ClusterPage({ onBack }) {
       setCuWaOutput((prev) => ({ ...(prev || {}), myspikeCompare: r }));
       alert("MySPIKE Comparison siap.");
     } catch (e) {
-      setErr(String(e?.message || e));
+      safeSetErr(e);
       alert(String(e?.message || e));
     } finally {
       setBusy(false);
     }
   }
 
+  // ========= EDIT: CLUSTER =========
   function addCluster() {
+    if (locked) return;
+    const id = uid("cl_");
     setClusters((prev) => [
       ...prev,
-      { id: `c${Date.now()}`, title: "Cluster Baharu", items: [] },
+      { id, title: "Cluster Baharu", items: [] },
     ]);
     setAgreed(false);
+    setEditingClusterId(id);
   }
 
   function removeCluster(clusterId) {
+    if (locked) return;
+    const target = clusters.find((c) => c.id === clusterId);
+    if (!target) return;
+
+    if ((target.items || []).length > 0) {
+      alert("Cluster ini ada kad. Pindahkan kad dahulu sebelum buang cluster.");
+      return;
+    }
+
     setClusters((prev) => prev.filter((c) => c.id !== clusterId));
     setAgreed(false);
+  }
+
+  function updateClusterTitle(clusterId, title) {
+    if (locked) return;
+    setClusters((prev) =>
+      prev.map((x) => (x.id === clusterId ? { ...x, title } : x))
+    );
+    setAgreed(false);
+  }
+
+  // ========= EDIT: CARD TEXT OVERRIDE =========
+  function setCardOverride(cardId, newText) {
+    if (locked) return;
+    const id = normId(cardId);
+    if (!id) return;
+    setOverrides((prev) => ({
+      ...(prev || {}),
+      [id]: { ...(prev?.[id] || {}), activityOverride: newText },
+    }));
+    setAgreed(false);
+  }
+
+  // ========= DRAG & DROP (native) =========
+  function onDragStartCard(e, from, cardId) {
+    if (locked) return;
+    const payload = { from, cardId: normId(cardId) };
+    dragRef.current = payload;
+    try {
+      e.dataTransfer.setData("text/plain", JSON.stringify(payload));
+    } catch (_) {}
+    e.dataTransfer.effectAllowed = "move";
+  }
+
+  function onDragOverDropzone(e) {
+    if (locked) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+  }
+
+  function removeCardFromCluster(prevClusters, fromClusterId, cardId) {
+    return prevClusters.map((c) => {
+      if (c.id !== fromClusterId) return c;
+      return { ...c, items: (c.items || []).filter((it) => normId(it.id) !== cardId) };
+    });
+  }
+
+  function addCardToCluster(prevClusters, toClusterId, cardObj) {
+    return prevClusters.map((c) => {
+      if (c.id !== toClusterId) return c;
+      const exists = (c.items || []).some((it) => normId(it.id) === normId(cardObj.id));
+      if (exists) return c;
+      return { ...c, items: [...(c.items || []), cardObj] };
+    });
+  }
+
+  function findCardObject(cardId) {
+    const id = normId(cardId);
+    if (!id) return null;
+
+    // 1) cuba dalam clusters
+    for (const c of clusters || []) {
+      const hit = (c.items || []).find((it) => normId(it.id) === id);
+      if (hit) return hit;
+    }
+    // 2) cuba dalam unassigned
+    const uHit = (unassigned || []).find((u) => normId(u.id) === id);
+    if (uHit) return uHit;
+
+    // 3) fallback: cardsById
+    const base = cardsById?.[id];
+    return base || null;
+  }
+
+  function onDropToCluster(e, toClusterId) {
+    if (locked) return;
+    e.preventDefault();
+
+    let payload = dragRef.current;
+    try {
+      const txt = e.dataTransfer.getData("text/plain");
+      if (txt) payload = JSON.parse(txt);
+    } catch (_) {}
+
+    const from = payload?.from;
+    const cardId = normId(payload?.cardId);
+    if (!cardId) return;
+
+    const cardObj = findCardObject(cardId);
+    if (!cardObj) return;
+
+    // jika drop dalam cluster yang sama, ignore
+    if (from?.type === "cluster" && from?.clusterId === toClusterId) return;
+
+    // 1) remove dari asal
+    if (from?.type === "cluster" && from?.clusterId) {
+      setClusters((prev) => removeCardFromCluster(prev, from.clusterId, cardId));
+    } else if (from?.type === "unassigned") {
+      setUnassigned((prev) => (prev || []).filter((u) => normId(u.id) !== cardId));
+    }
+
+    // 2) add ke dest cluster
+    setClusters((prev) => addCardToCluster(prev, toClusterId, cardObj));
+    setAgreed(false);
+    dragRef.current = null;
+  }
+
+  function onDropToUnassigned(e) {
+    if (locked) return;
+    e.preventDefault();
+
+    let payload = dragRef.current;
+    try {
+      const txt = e.dataTransfer.getData("text/plain");
+      if (txt) payload = JSON.parse(txt);
+    } catch (_) {}
+
+    const from = payload?.from;
+    const cardId = normId(payload?.cardId);
+    if (!cardId) return;
+
+    const cardObj = findCardObject(cardId);
+    if (!cardObj) return;
+
+    // jika dari unassigned drop unassigned, ignore
+    if (from?.type === "unassigned") return;
+
+    // remove dari cluster asal
+    if (from?.type === "cluster" && from?.clusterId) {
+      setClusters((prev) => removeCardFromCluster(prev, from.clusterId, cardId));
+    }
+
+    // add ke unassigned jika belum ada
+    setUnassigned((prev) => {
+      const exists = (prev || []).some((u) => normId(u.id) === cardId);
+      if (exists) return prev;
+      return [...(prev || []), cardObj];
+    });
+
+    setAgreed(false);
+    dragRef.current = null;
   }
 
   function doAgreed() {
@@ -390,7 +601,19 @@ export default function ClusterPage({ onBack }) {
       alert("Sila pastikan semua tajuk cluster diisi sebelum Agreed.");
       return;
     }
+
+    // optional: cluster kosong disyorkan buang
+    const hasEmptyCluster = clusters.some((c) => (c.items || []).length === 0);
+    if (hasEmptyCluster) {
+      const ok = confirm(
+        "Ada cluster kosong (tiada kad). Disyorkan buang atau pindahkan kad. Teruskan Agreed?"
+      );
+      if (!ok) return;
+    }
+
     setAgreed(true);
+    setEditingClusterId(null);
+    setEditingCardKey(null);
   }
 
   // Auto-load bila masuk page
@@ -477,7 +700,7 @@ export default function ClusterPage({ onBack }) {
           Session: <b>{sidTrim || "-"}</b>
         </span>
         <span style={{ marginLeft: 10, color: agreed ? "green" : "#cc7a00" }}>
-          {agreed ? "✓ AGREED" : "* BELUM AGREED"}
+          {agreed ? "✓ AGREED (LOCKED)" : "* BELUM AGREED"}
         </span>
       </div>
 
@@ -505,17 +728,22 @@ export default function ClusterPage({ onBack }) {
       >
         <h2 style={{ marginTop: 0 }}>Edit Clustering (sebelum Merge)</h2>
         <div style={{ color: "#555", marginBottom: 10 }}>
-          Anda boleh: ubah tajuk cluster dan pindahkan aktiviti. Selepas selesai,
-          tekan Agreed untuk lock sebelum Apply AI (Merge).
+          Anda boleh: edit tajuk cluster, edit teks kad (override), dan drag & drop
+          kad antara cluster / Unassigned. Selepas selesai, tekan <b>Agreed</b> untuk lock sebelum Apply AI (Merge).
         </div>
 
         <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-          <button onClick={addCluster} disabled={busy}>
+          <button onClick={addCluster} disabled={busy || locked}>
             + Add Cluster
           </button>
-          <button onClick={doAgreed} disabled={busy}>
+          <button onClick={doAgreed} disabled={busy || locked}>
             Agreed
           </button>
+          {locked ? (
+            <span style={{ color: "#0a7a2a", alignSelf: "center", fontWeight: 700 }}>
+              Locked
+            </span>
+          ) : null}
         </div>
 
         {!clusters.length ? (
@@ -527,82 +755,220 @@ export default function ClusterPage({ onBack }) {
             {clusters.map((c) => (
               <div
                 key={c.id}
+                onDragOver={onDragOverDropzone}
+                onDrop={(e) => onDropToCluster(e, c.id)}
                 style={{
                   border: "1px solid #eee",
                   borderRadius: 12,
                   padding: 12,
+                  background: "#fff",
                 }}
+                title={locked ? "Locked" : "Drop kad di sini untuk pindahkan ke cluster ini"}
               >
+                {/* Cluster Header */}
                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                  <input
-                    value={c.title}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      setClusters((prev) =>
-                        prev.map((x) =>
-                          x.id === c.id ? { ...x, title: v } : x
-                        )
-                      );
-                      setAgreed(false);
-                    }}
-                    style={{
-                      fontSize: 16,
-                      fontWeight: 700,
-                      width: "100%",
-                      padding: "10px 12px",
-                      borderRadius: 10,
-                      border: "1px solid #ddd",
-                    }}
-                  />
+                  <div style={{ flex: 1 }}>
+                    {editingClusterId === c.id && !locked ? (
+                      <input
+                        value={c.title}
+                        onChange={(e) => updateClusterTitle(c.id, e.target.value)}
+                        onBlur={() => setEditingClusterId(null)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") setEditingClusterId(null);
+                        }}
+                        autoFocus
+                        style={{
+                          fontSize: 16,
+                          fontWeight: 800,
+                          width: "100%",
+                          padding: "10px 12px",
+                          borderRadius: 10,
+                          border: "1px solid #ddd",
+                        }}
+                      />
+                    ) : (
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <div style={{ fontSize: 16, fontWeight: 800 }}>{c.title}</div>
+                        <button
+                          disabled={busy || locked}
+                          onClick={() => setEditingClusterId(c.id)}
+                          title="Edit nama cluster"
+                          style={{ height: 28 }}
+                        >
+                          Edit
+                        </button>
+                      </div>
+                    )}
+                    <div style={{ fontSize: 12, color: "#777", marginTop: 2 }}>
+                      Jumlah kad: {(c.items || []).length}
+                    </div>
+                  </div>
+
                   <button
                     onClick={() => removeCluster(c.id)}
-                    disabled={busy}
-                    title="Buang cluster"
+                    disabled={busy || locked}
+                    title="Buang cluster (hanya jika kosong)"
+                    style={{ height: 28 }}
                   >
                     Buang
                   </button>
                 </div>
 
+                {/* Cards */}
                 <div style={{ marginTop: 10 }}>
                   {(c.items || []).length ? (
-                    <ul style={{ margin: "6px 0 0 18px" }}>
-                      {c.items.map((it) => (
-                        <li key={String(it.id)} style={{ margin: "6px 0" }}>
-                          <b>{it.activity || "(tiada teks)"}</b>{" "}
-                          {it.time ? (
-                            <span style={{ color: "#777" }}>({it.time})</span>
-                          ) : null}{" "}
-                          {it._src ? (
-                            <span style={{ color: "#777" }}>[{it._src}]</span>
-                          ) : null}
-                        </li>
-                      ))}
+                    <ul style={{ margin: "6px 0 0 18px", display: "grid", gap: 8 }}>
+                      {c.items.map((it) => {
+                        const cardId = normId(it?.id);
+                        const key = `c:${c.id}:${cardId}`;
+                        const editing = editingCardKey === key && !locked;
+
+                        return (
+                          <li
+                            key={cardId}
+                            draggable={!locked}
+                            onDragStart={(e) =>
+                              onDragStartCard(e, { type: "cluster", clusterId: c.id }, cardId)
+                            }
+                            style={{
+                              margin: 0,
+                              padding: 10,
+                              borderRadius: 10,
+                              border: "1px solid #eee",
+                              background: "#fafafa",
+                            }}
+                            title={locked ? "Locked" : "Drag untuk pindah ke cluster lain / Unassigned"}
+                          >
+                            <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+                              <div style={{ flex: 1 }}>
+                                {editing ? (
+                                  <textarea
+                                    value={overrides?.[cardId]?.activityOverride ?? getCardText(it)}
+                                    onChange={(e) => setCardOverride(cardId, e.target.value)}
+                                    onBlur={() => setEditingCardKey(null)}
+                                    rows={2}
+                                    autoFocus
+                                    style={{
+                                      width: "100%",
+                                      padding: "8px 10px",
+                                      borderRadius: 8,
+                                      border: "1px solid #ccc",
+                                      resize: "vertical",
+                                    }}
+                                  />
+                                ) : (
+                                  <div style={{ fontWeight: 700 }}>
+                                    {getCardText(it) || "(tiada teks)"}
+                                  </div>
+                                )}
+
+                                <div style={{ marginTop: 4, fontSize: 12, color: "#777" }}>
+                                  {it.time ? <span>({it.time}) </span> : null}
+                                  {it._src ? <span>[{it._src}] </span> : null}
+                                  {it.name ? <span>— {it.name}</span> : null}
+                                </div>
+                              </div>
+
+                              <button
+                                disabled={busy || locked}
+                                onClick={() => setEditingCardKey(editing ? null : key)}
+                                title="Edit teks kad"
+                                style={{ height: 28 }}
+                              >
+                                Edit
+                              </button>
+                            </div>
+                          </li>
+                        );
+                      })}
                     </ul>
                   ) : (
-                    <div style={{ color: "#666" }}>
-                      Tiada aktiviti dalam cluster ini.
-                    </div>
+                    <div style={{ color: "#666" }}>Tiada aktiviti dalam cluster ini.</div>
                   )}
                 </div>
               </div>
             ))}
 
             {/* UNASSIGNED */}
-            <div style={{ borderTop: "1px solid #eee", paddingTop: 10 }}>
+            <div
+              onDragOver={onDragOverDropzone}
+              onDrop={onDropToUnassigned}
+              style={{
+                borderTop: "1px solid #eee",
+                paddingTop: 10,
+                borderRadius: 12,
+                padding: 12,
+                background: "#fff",
+              }}
+              title={locked ? "Locked" : "Drop kad di sini untuk pindahkan ke Unassigned"}
+            >
               <h3 style={{ margin: "8px 0" }}>Unassigned</h3>
+
               {unassigned.length ? (
-                <ul style={{ margin: "6px 0 0 18px" }}>
-                  {unassigned.map((u) => (
-                    <li key={String(u.id)} style={{ margin: "6px 0" }}>
-                      <b>{u.activity || "(tiada teks)"}</b>{" "}
-                      {u.time ? (
-                        <span style={{ color: "#777" }}>({u.time})</span>
-                      ) : null}{" "}
-                      {u._src ? (
-                        <span style={{ color: "#777" }}>[{u._src}]</span>
-                      ) : null}
-                    </li>
-                  ))}
+                <ul style={{ margin: "6px 0 0 18px", display: "grid", gap: 8 }}>
+                  {unassigned.map((u) => {
+                    const cardId = normId(u?.id);
+                    const key = `u:${cardId}`;
+                    const editing = editingCardKey === key && !locked;
+
+                    return (
+                      <li
+                        key={cardId}
+                        draggable={!locked}
+                        onDragStart={(e) =>
+                          onDragStartCard(e, { type: "unassigned" }, cardId)
+                        }
+                        style={{
+                          margin: 0,
+                          padding: 10,
+                          borderRadius: 10,
+                          border: "1px solid #eee",
+                          background: "#fafafa",
+                        }}
+                        title={locked ? "Locked" : "Drag untuk pindah ke cluster"}
+                      >
+                        <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+                          <div style={{ flex: 1 }}>
+                            {editing ? (
+                              <textarea
+                                value={overrides?.[cardId]?.activityOverride ?? getCardText(u)}
+                                onChange={(e) => setCardOverride(cardId, e.target.value)}
+                                onBlur={() => setEditingCardKey(null)}
+                                rows={2}
+                                autoFocus
+                                style={{
+                                  width: "100%",
+                                  padding: "8px 10px",
+                                  borderRadius: 8,
+                                  border: "1px solid #ccc",
+                                  resize: "vertical",
+                                }}
+                              />
+                            ) : (
+                              <div style={{ fontWeight: 700 }}>
+                                {getCardText(u) || "(tiada teks)"}
+                              </div>
+                            )}
+
+                            <div style={{ marginTop: 4, fontSize: 12, color: "#777" }}>
+                              {u.time ? <span>({u.time}) </span> : null}
+                              {u._src ? <span>[{u._src}] </span> : null}
+                              {u.name ? <span>— {u.name}</span> : null}
+                            </div>
+                          </div>
+
+                          <button
+                            disabled={busy || locked}
+                            onClick={() => setEditingCardKey(editing ? null : key)}
+                            title="Edit teks kad"
+                            style={{ height: 28 }}
+                          >
+                            Edit
+                          </button>
+                        </div>
+                      </li>
+                    );
+                  })}
                 </ul>
               ) : (
                 <div style={{ color: "#666" }}>Tiada unassigned.</div>
@@ -620,9 +986,7 @@ export default function ClusterPage({ onBack }) {
             Tiada comparison lagi. Klik Run AI Comparison (MySPIKE).
           </div>
         ) : (
-
-      <MySpikeComparisonView data={cuWaOutput?.myspikeCompare} />
-      
+          <MySpikeComparisonView data={cuWaOutput?.myspikeCompare} />
         )}
       </div>
 
