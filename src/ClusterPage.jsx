@@ -350,7 +350,7 @@ const r = await apiPost(`/api/cluster/apply`, {
   })),
 
   unassigned: (unassigned || []).map((u) => String(u.id)),
-  unassignedIds: (unassigned || []).map((u) => String(u.id)), // optional safety
+  unassignedIds: (unassigned || []).map((u) => String(u.id)),
 });
 
       // refresh output CU/WA
