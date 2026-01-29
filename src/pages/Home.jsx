@@ -8,40 +8,56 @@ export default function Home() {
 
   return (
     <div style={styles.wrapper}>
-      <div style={styles.left}>
-        <div style={styles.brand}>
-          <img src={pfhLogo} alt="PFH Logo" style={styles.logo} />
-          <div style={styles.badge}>Powered by PFH Digital 2026</div>
+      {/* subtle overlay untuk nampak lebih premium */}
+      <div style={styles.overlay} />
+
+      <div style={styles.container}>
+        {/* LEFT */}
+        <div style={styles.leftCard}>
+          <div style={styles.brandRow}>
+            <img src={pfhLogo} alt="PFH Logo" style={styles.logo} />
+            <div style={styles.badge}>Powered by PFH Digital 2026</div>
+          </div>
+
+          <h1 style={styles.title}>Crafting Digital Excellence</h1>
+          <div style={styles.line} />
+
+          <p style={styles.subtitle}>
+            Your Gateway to Exceptional <br />
+            <strong>STANDARD DEVELOPMENT</strong>
+          </p>
+
+          <div style={styles.features}>
+            <FeatureCard title="NOSS.ai" onClick={() => go("#/panel")} />
+            <FeatureCard title="WIM.ai" onClick={() => go("#/wim")} />
+            <FeatureCard title="SOALAN.ai" onClick={() => go("#/soalan")} />
+          </div>
+
+          <div style={styles.quickLinks}>
+            <button style={styles.linkBtn} onClick={() => go("#/board")}>
+              Go to LiveBoard
+            </button>
+            <button style={styles.linkBtn} onClick={() => go("#/panel")}>
+              Go to Panel Input
+            </button>
+          </div>
+
+          <div style={styles.footerMark}>PFH Digital.ai 2026</div>
         </div>
 
-        <h1 style={styles.title}>Crafting Digital Excellence</h1>
-        <hr style={styles.line} />
-        <p style={styles.subtitle}>
-          Your Gateway to Exceptional <br />
-          <strong>STANDARD DEVELOPMENT</strong>
-        </p>
+        {/* RIGHT */}
+        <div style={styles.rightArea}>
+          <div style={styles.rightCard}>
+            <div style={styles.rightTitle}>iNOSS</div>
+            <div style={styles.rightDesc}>
+              NOSS / WIM / SOALAN – workflow-driven standard development
+            </div>
 
-        <div style={styles.features}>
-          <FeatureCard title="NOSS.ai" onClick={() => go("#/panel")} />
-          <FeatureCard title="WIM.ai" disabled />
-          <FeatureCard title="SOALAN.ai" disabled />
-        </div>
-
-        <div style={styles.quickLinks}>
-          <button style={styles.linkBtn} onClick={() => go("#/board")}>
-            Go to LiveBoard
-          </button>
-          <button style={styles.linkBtn} onClick={() => go("#/panel")}>
-            Go to Panel Input
-          </button>
-        </div>
-      </div>
-
-      <div style={styles.right}>
-        <div style={styles.rightCard}>
-          <div style={styles.rightTitle}>iNOSS</div>
-          <div style={styles.rightDesc}>
-            NOSS / WIM / SOALAN – workflow-driven standard development
+            <div style={styles.chips}>
+              <span style={styles.chip}>DACUM</span>
+              <span style={styles.chip}>AI Clustering</span>
+              <span style={styles.chip}>CPC → CP</span>
+            </div>
           </div>
         </div>
       </div>
@@ -51,102 +67,166 @@ export default function Home() {
 
 const styles = {
   wrapper: {
-    display: "flex",
-    height: "100vh",
-    background: "linear-gradient(135deg, #e66a2c 50%, #0b3c6d 50%)",
-  },
-  left: {
-    flex: 1.1,
-    padding: "70px 70px",
-    color: "#fff",
-  },
-  right: {
-    flex: 0.9,
     position: "relative",
+    minHeight: "100vh",
+    background: "linear-gradient(135deg, #e66a2c 50%, #0b3c6d 50%)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "28px 16px",
+    overflow: "hidden",
+  },
+  overlay: {
+    position: "absolute",
+    inset: 0,
+    background:
+      "radial-gradient(circle at 20% 20%, rgba(255,255,255,0.12), transparent 40%), radial-gradient(circle at 80% 80%, rgba(255,255,255,0.10), transparent 45%)",
+    pointerEvents: "none",
   },
 
-  // ✅ tambah: logo + badge dalam satu baris
-  brand: {
+  container: {
+    position: "relative",
+    width: "min(1100px, 100%)",
+    display: "grid",
+    gridTemplateColumns: "1.15fr 0.85fr",
+    gap: 18,
+  },
+
+  leftCard: {
+    borderRadius: 24,
+    padding: "44px 44px",
+    color: "#fff",
+    background: "rgba(255,255,255,0.08)",
+    border: "1px solid rgba(255,255,255,0.18)",
+    boxShadow: "0 18px 50px rgba(0,0,0,0.35)",
+    backdropFilter: "blur(10px)",
+  },
+
+  rightArea: {
+    position: "relative",
+    minHeight: 420,
+  },
+
+  brandRow: {
     display: "flex",
     alignItems: "center",
     gap: 14,
-    marginBottom: 26,
+    marginBottom: 22,
+    flexWrap: "wrap",
   },
-  // ✅ tambah: size logo
   logo: {
-    height: 64,
+    height: 56,
     width: "auto",
     display: "block",
   },
-
   badge: {
-    background: "#fff",
-    color: "#000",
+    background: "rgba(255,255,255,0.92)",
+    color: "#111",
     display: "inline-block",
-    padding: "10px 18px",
-    borderRadius: 24,
-    boxShadow: "0 8px 24px rgba(0,0,0,0.25)",
+    padding: "10px 16px",
+    borderRadius: 999,
+    boxShadow: "0 10px 26px rgba(0,0,0,0.25)",
+    fontSize: 13,
+    fontWeight: 700,
   },
+
   title: {
     fontSize: 56,
-    fontWeight: 800,
+    fontWeight: 900,
     lineHeight: 1.05,
     margin: 0,
-    textShadow: "0 8px 18px rgba(0,0,0,0.35)",
+    letterSpacing: -0.5,
+    textShadow: "0 10px 20px rgba(0,0,0,0.35)",
   },
   line: {
-    width: 160,
-    border: "2px solid rgba(255,255,255,0.85)",
-    margin: "22px 0 18px",
+    width: 170,
+    height: 3,
+    background: "rgba(255,255,255,0.85)",
+    borderRadius: 20,
+    margin: "20px 0 16px",
   },
   subtitle: {
-    fontSize: 22,
-    marginBottom: 34,
+    fontSize: 20,
+    marginBottom: 28,
     opacity: 0.95,
+    lineHeight: 1.35,
   },
+
   features: {
     display: "flex",
-    gap: 22,
+    gap: 18,
     alignItems: "flex-start",
     flexWrap: "wrap",
-    marginTop: 10,
+    marginTop: 8,
   },
+
   quickLinks: {
     display: "flex",
     gap: 12,
-    marginTop: 26,
+    marginTop: 22,
     flexWrap: "wrap",
   },
   linkBtn: {
-    background: "rgba(255,255,255,0.15)",
-    border: "1px solid rgba(255,255,255,0.35)",
+    background: "rgba(255,255,255,0.14)",
+    border: "1px solid rgba(255,255,255,0.30)",
     color: "#fff",
     padding: "10px 14px",
-    borderRadius: 12,
+    borderRadius: 14,
     cursor: "pointer",
-    fontWeight: 600,
+    fontWeight: 700,
+    transition: "transform 120ms ease, background 120ms ease",
   },
+
+  footerMark: {
+    marginTop: 20,
+    fontSize: 12,
+    opacity: 0.75,
+  },
+
   rightCard: {
     position: "absolute",
-    right: 40,
-    bottom: 40,
-    width: "70%",
-    background: "rgba(255,255,255,0.12)",
-    border: "1px solid rgba(255,255,255,0.18)",
+    right: 0,
+    bottom: 0,
+    left: 0,
     borderRadius: 24,
     padding: 22,
+    background: "rgba(255,255,255,0.10)",
+    border: "1px solid rgba(255,255,255,0.18)",
+    boxShadow: "0 18px 50px rgba(0,0,0,0.35)",
     backdropFilter: "blur(10px)",
-    boxShadow: "0 16px 40px rgba(0,0,0,0.35)",
     color: "#fff",
   },
   rightTitle: {
     fontSize: 28,
-    fontWeight: 800,
+    fontWeight: 900,
     marginBottom: 6,
+    letterSpacing: -0.2,
   },
   rightDesc: {
     fontSize: 14,
-    opacity: 0.9,
-    lineHeight: 1.5,
+    opacity: 0.92,
+    lineHeight: 1.55,
+    marginBottom: 14,
+  },
+
+  chips: {
+    display: "flex",
+    gap: 10,
+    flexWrap: "wrap",
+  },
+  chip: {
+    fontSize: 12,
+    padding: "8px 10px",
+    borderRadius: 999,
+    background: "rgba(255,255,255,0.12)",
+    border: "1px solid rgba(255,255,255,0.16)",
+    opacity: 0.95,
+    fontWeight: 700,
   },
 };
+
+/**
+ * Nota:
+ * Jika FeatureCard anda memang ada `disabled` behaviour,
+ * kita dah buang `disabled` untuk WIM.ai & SOALAN.ai supaya boleh klik.
+ */
