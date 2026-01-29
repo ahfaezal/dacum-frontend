@@ -339,24 +339,19 @@ export default function ClusterPage({ onBack }) {
     return { clustersDraft, unassignedDraft, overridesDraft };
   }
 
-  async function applyMerge() {
-    const sid = sidTrim;
-    if (!sid) return alert("Sila isi Session dulu.");
-    if (!agreed)
-      return alert("Sila klik Agreed dahulu sebelum Apply AI (Merge).");
+const r = await apiPost(`/api/cluster/apply`, {
+  sessionId: sid,
 
-    setBusy(true);
-    setErr("");
+  // ✅ INI YANG PENTING — hantar clustering yang telah diedit
+  clusters: clusters.map((c) => ({
+    id: c.id,
+    title: c.title,
+    cardIds: (c.items || []).map((it) => String(it.id)),
+  })),
 
-    try {
-      const draft = buildDraftPayload();
-
-      // ✅ endpoint backend anda: POST /api/cluster/apply { sessionId }
-      // Saya tambah draft supaya backend boleh guna bila anda upgrade backend.
-      const r = await apiPost(`/api/cluster/apply`, {
-        sessionId: sid,
-        ...draft,
-      });
+  unassigned: (unassigned || []).map((u) => String(u.id)),
+  unassignedIds: (unassigned || []).map((u) => String(u.id)), // optional safety
+});
 
       // refresh output CU/WA
       await loadCuWaOutput(sid);
@@ -591,30 +586,43 @@ export default function ClusterPage({ onBack }) {
     dragRef.current = null;
   }
 
-  function doAgreed() {
-    if (!clusters.length) {
-      alert("Tiada clustering untuk di-Agreed. Sila Run AI (Clustering) dahulu.");
-      return;
-    }
-    const hasEmptyTitle = clusters.some((c) => !String(c.title || "").trim());
-    if (hasEmptyTitle) {
-      alert("Sila pastikan semua tajuk cluster diisi sebelum Agreed.");
-      return;
-    }
+async function doAgreed() {
+  if (!clusters.length) {
+    alert("Tiada clustering untuk di-Agreed.\nSila Run AI (Clustering) dahulu.");
+    return;
+  }
+  const hasEmptyTitle = clusters.some((c) => !String(c.title || "").trim());
+  if (hasEmptyTitle) {
+    alert("Sila pastikan semua tajuk cluster diisi sebelum Agreed.");
+    return;
+  }
 
-    // optional: cluster kosong disyorkan buang
-    const hasEmptyCluster = clusters.some((c) => (c.items || []).length === 0);
-    if (hasEmptyCluster) {
-      const ok = confirm(
-        "Ada cluster kosong (tiada kad). Disyorkan buang atau pindahkan kad. Teruskan Agreed?"
-      );
-      if (!ok) return;
-    }
+  setBusy(true);
+  setErr("");
+  try {
+    // ✅ simpan versi yang telah diedit ke backend
+    await apiPost(`/api/cluster/agreed`, {
+      sessionId: sidTrim,
+      agreed: true,
+      clusters: clusters.map((c) => ({
+        id: c.id,
+        title: c.title,
+        // simpan hanya card ids supaya ringan
+        cardIds: (c.items || []).map((it) => String(it.id)),
+      })),
+      unassigned: (unassigned || []).map((u) => String(u.id)),
+    });
 
     setAgreed(true);
-    setEditingClusterId(null);
-    setEditingCardKey(null);
+    // optional: reload supaya UI ikut sumber backend
+    await loadResult();
+  } catch (e) {
+    setErr(String(e?.message || e));
+    alert(String(e?.message || e));
+  } finally {
+    setBusy(false);
   }
+}
 
   // Auto-load bila masuk page
   useEffect(() => {
