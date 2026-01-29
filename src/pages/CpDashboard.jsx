@@ -289,7 +289,6 @@ async function loadCpDraft(cuCode) {
         (Array.isArray(root?.wa) && root.wa) ||
         (Array.isArray(root?.items) && root.items) ||
         [];
-      ...
     }
       
       const payloadToStore = {
