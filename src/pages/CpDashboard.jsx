@@ -85,41 +85,68 @@ function pad2(n) {
 
 /**
  * Normalize draft yang balik dari backend (kalis peluru).
- * Kita cuba cari: waItems -> ws[] -> pc
+ * Menyokong struktur:
+ * - { cpDraft: { waItems:[ {waCode,waTitle, ws:[{wsCode,wsTitle,pc}]} ] } }
+ * - { waItems:[...] }
+ * - { wa:[...] } / { items:[...] }
  */
-function normalizeDraftFromApi(j, cuFromCpc) {
-  // Target struktur untuk UI:
-  // {
-  //   waItems: [
-  //     { waCode, waTitle, ws: [ { wsCode, wsTitle, pc } ] }
-  //   ]
-  // }
+function normalizeDraftFromApi(apiObjOrDraft, cuFromCpc) {
+  // ✅ ambil root sebenar jika backend bungkus bawah cpDraft/draft/cp
+  const root =
+    apiObjOrDraft?.cpDraft ||
+    apiObjOrDraft?.draft ||
+    apiObjOrDraft?.cp ||
+    apiObjOrDraft;
 
   const out = { waItems: [] };
 
-  // 1) Cuba guna j.waItems / j.wa / j.items
+  // 1) Cuba ambil WA grouping daripada backend
   const waItems =
-    (Array.isArray(j?.waItems) && j.waItems) ||
-    (Array.isArray(j?.wa) && j.wa) ||
-    (Array.isArray(j?.items) && j.items) ||
+    (Array.isArray(root?.waItems) && root.waItems) ||
+    (Array.isArray(root?.waList) && root.waList) ||
+    (Array.isArray(root?.wa) && root.wa) ||
+    (Array.isArray(root?.items) && root.items) ||
     [];
 
   if (waItems.length) {
     out.waItems = waItems.map((w, wi) => {
-      const waCode = safeStr(w?.waCode || w?.code || w?.id || cuFromCpc?.wa?.[wi]?.waCode || `w${pad2(wi + 1)}`).toLowerCase();
-      const waTitle = safeStr(w?.waTitle || w?.title || w?.name || cuFromCpc?.wa?.[wi]?.waTitle || `WA ${wi + 1}`);
+      const waCode = safeStr(
+        w?.waCode ||
+          w?.code ||
+          w?.id ||
+          // fallback: guna WA dari CPC ikut index
+          extractWaListFromCu(cuFromCpc)?.[wi]?.waCode ||
+          `w${pad2(wi + 1)}`
+      ).toLowerCase();
 
+      const waTitle = safeStr(
+        w?.waTitle ||
+          w?.title ||
+          w?.name ||
+          extractWaListFromCu(cuFromCpc)?.[wi]?.waTitle ||
+          `WA ${wi + 1}`
+      );
+
+      // 2) WS array (backend mungkin guna ws / wsItems / steps / workSteps)
       const wsArr =
         (Array.isArray(w?.ws) && w.ws) ||
+        (Array.isArray(w?.wsItems) && w.wsItems) ||
         (Array.isArray(w?.workSteps) && w.workSteps) ||
         (Array.isArray(w?.steps) && w.steps) ||
         [];
 
-      const ws = wsArr.map((s, si) => ({
-        wsCode: safeStr(s?.wsCode || s?.code || `${wi + 1}.${si + 1}`),
-        wsTitle: safeStr(s?.wsTitle || s?.title || s?.text || "xxx"),
-        pc: safeStr(s?.pc || s?.performanceCriteria || s?.criteria || "xxx"),
-      }));
+      const ws = wsArr.map((s, si) => {
+        const wsCode = safeStr(s?.wsCode || s?.code || `${wi + 1}.${si + 1}`);
+        const wsTitle = safeStr(s?.wsTitle || s?.title || s?.text || "xxx");
+
+        // PC mungkin berada di s.pc atau s.performanceCriteria atau s.criteria
+        // Ada backend letak pc sebagai array; kita join jika perlu
+        let pcVal = s?.pc ?? s?.performanceCriteria ?? s?.criteria ?? "xxx";
+        if (Array.isArray(pcVal)) pcVal = pcVal.map((x) => safeStr(x)).filter(Boolean).join("; ");
+        const pc = safeStr(pcVal || "xxx");
+
+        return { wsCode, wsTitle, pc };
+      });
 
       return { waCode, waTitle, ws };
     });
@@ -127,13 +154,12 @@ function normalizeDraftFromApi(j, cuFromCpc) {
     return out;
   }
 
-  // 2) Jika backend pulangkan flat wsList/pcList tanpa grouping WA
-  // fallback: bina dari CPC WA list, letak placeholder
+  // 3) Kalau backend tak bagi grouping, fallback dari CPC supaya UI tak rosak
   const waFromCpc = extractWaListFromCu(cuFromCpc) || [];
   out.waItems = waFromCpc.map((wa, wi) => ({
     waCode: getWaIdCanonical(wa) || `w${pad2(wi + 1)}`,
     waTitle: getWaTitle(wa) || `WA ${wi + 1}`,
-    ws: [], // nanti placeholder di UI
+    ws: [],
   }));
 
   return out;
@@ -146,7 +172,6 @@ export default function CpDashboard() {
   const [err, setErr] = useState("");
   const [busyCu, setBusyCu] = useState("");
   const [loading, setLoading] = useState(false);
-  const [cpDraftByCu, setCpDraftByCu] = useState({});
 
   // draftCache: { [cuCodeCanon]: { waItems:[...] , generatedAt } }
   const [draftCache, setDraftCache] = useState({});
@@ -167,7 +192,7 @@ export default function CpDashboard() {
     setErr("");
     try {
       const r = await fetch(`${API_BASE}/api/cpc/${encodeURIComponent(sessionId)}`);
-      const j = await r.json();
+      const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j?.error || "Gagal load CPC");
       setCpc(j);
     } catch (e) {
@@ -178,23 +203,6 @@ export default function CpDashboard() {
     }
   }
 
-async function loadCpDraft(cuCode) {
-  if (!sessionId || !cuCode) return null;
-
-  try {
-    const r = await fetch(
-      `${API_BASE}/api/cp/${encodeURIComponent(sessionId)}/${encodeURIComponent(cuCode)}?version=latest`
-    );
-    if (!r.ok) return null;
-
-    const j = await r.json();
-    return j?.cp || null;
-  } catch (e) {
-    console.error("loadCpDraft error:", e);
-    return null;
-  }
-}
-  
   // Load draftCache dari sessionStorage bila masuk page
   useEffect(() => {
     if (!sessionId) return;
@@ -204,7 +212,7 @@ async function loadCpDraft(cuCode) {
       for (let i = 0; i < sessionStorage.length; i++) {
         const k = sessionStorage.key(i);
         if (!k || !k.startsWith(prefix)) continue;
-        const cuCode = k.slice(prefix.length);
+        const cuCode = safeStr(k.slice(prefix.length)).toLowerCase();
         const v = sessionStorage.getItem(k);
         if (!v) continue;
         out[cuCode] = JSON.parse(v);
@@ -251,8 +259,6 @@ async function loadCpDraft(cuCode) {
 
       if (!waList.length) throw new Error("Tiada WA ditemui untuk CU ini (CPC).");
 
-      // Panggil backend (anda boleh kekalkan endpoint sama /api/cp/draft)
-      // Tambah parameter AI rules (backend boleh guna/ignore sementara).
       const r = await fetch(`${API_BASE}/api/cp/draft`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -264,7 +270,7 @@ async function loadCpDraft(cuCode) {
           ai: {
             wsMin: 3,
             pcPerWs: 1,
-            pcStyle: "past_tense_ms", // "telah ...", measurable
+            pcStyle: "past_tense_ms",
             language: "MS",
             measurable: true,
           },
@@ -274,30 +280,15 @@ async function loadCpDraft(cuCode) {
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j?.error || "Gagal jana WS/PC (AI Assisted).");
 
-      // ✅ Ambil cpDraft sebagai root sebenar
-      const draftObj = j?.cpDraft || j?.draft || j?.cp || j;
+      // ✅ normalize guna response sebenar (fungsi ini sendiri akan ambil cpDraft jika ada)
+      const normalized = normalizeDraftFromApi(j, cu);
 
-      // ✅ normalize guna root yang betul
-      const normalized = normalizeDraftFromApi(draftObj, cu);
-
-    function normalizeDraftFromApi(root, cuFromCpc) {
-
-      const out = { waItems: [] };
-
-      const waItems =
-        (Array.isArray(root?.waItems) && root.waItems) ||
-        (Array.isArray(root?.wa) && root.wa) ||
-        (Array.isArray(root?.items) && root.items) ||
-        [];
-    }
-      
       const payloadToStore = {
         sessionId,
         cuCode,
         cuTitle,
         ...normalized,
-        // kalau backend dah bagi generatedAt, guna itu
-        generatedAt: draftObj?.generatedAt || new Date().toISOString(),
+        generatedAt: (j?.cpDraft || j?.draft || j?.cp)?.generatedAt || new Date().toISOString(),
       };
 
       // cache state
@@ -307,7 +298,6 @@ async function loadCpDraft(cuCode) {
       try {
         sessionStorage.setItem(`cpDraft:${sessionId}:${cuCode}`, JSON.stringify(payloadToStore));
       } catch (e) {}
-
     } catch (e) {
       console.error(e);
       setErr(String(e?.message || e));
@@ -440,8 +430,6 @@ async function loadCpDraft(cuCode) {
 
             const draft = cuCodeCanon ? draftCache[cuCodeCanon] : null;
 
-            // Jika tiada draft, kita render WA sahaja + placeholder WS/PC
-            // Jika ada draft, kita render jadual lengkap berdasarkan draft.waItems
             const waItemsForTable = (() => {
               if (draft?.waItems?.length) return draft.waItems;
 
@@ -449,7 +437,7 @@ async function loadCpDraft(cuCode) {
               return waList.map((wa, wi) => ({
                 waCode: getWaIdCanonical(wa) || `w${pad2(wi + 1)}`,
                 waTitle: getWaTitle(wa) || `WA ${wi + 1}`,
-                ws: [], // akan dipapar placeholder
+                ws: [],
               }));
             })();
 
@@ -468,7 +456,10 @@ async function loadCpDraft(cuCode) {
                       <b>WA dalam CPC:</b> {waList.length}
                       {draft?.generatedAt ? (
                         <>
-                          {" "} | <b>Draft:</b> <span>✅ Ada</span> <span style={{ opacity: 0.8 }}>({new Date(draft.generatedAt).toLocaleString("ms-MY")})</span>
+                          {" "} | <b>Draft:</b> <span>✅ Ada</span>{" "}
+                          <span style={{ opacity: 0.8 }}>
+                            ({new Date(draft.generatedAt).toLocaleString("ms-MY")})
+                          </span>
                         </>
                       ) : (
                         <>
@@ -538,7 +529,8 @@ async function loadCpDraft(cuCode) {
                               <ul className="li">
                                 {wsToShow.map((s, si) => (
                                   <li key={`ws-${wi}-${si}`}>
-                                    <b>{safeStr(s.wsCode) || `${waNo}.${si + 1}`}</b> {safeStr(s.wsTitle) || "xxx"}
+                                    <b>{safeStr(s.wsCode) || `${waNo}.${si + 1}`}</b>{" "}
+                                    {safeStr(s.wsTitle) || "xxx"}
                                   </li>
                                 ))}
                               </ul>
@@ -548,7 +540,8 @@ async function loadCpDraft(cuCode) {
                               <ul className="li">
                                 {wsToShow.map((s, si) => (
                                   <li key={`pc-${wi}-${si}`}>
-                                    <b>{safeStr(s.wsCode) || `${waNo}.${si + 1}`}</b> {safeStr(s.pc) || "xxx"}
+                                    <b>{safeStr(s.wsCode) || `${waNo}.${si + 1}`}</b>{" "}
+                                    {safeStr(s.pc) || "xxx"}
                                   </li>
                                 ))}
                               </ul>
