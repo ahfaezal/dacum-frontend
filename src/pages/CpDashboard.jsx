@@ -146,6 +146,7 @@ export default function CpDashboard() {
   const [err, setErr] = useState("");
   const [busyCu, setBusyCu] = useState("");
   const [loading, setLoading] = useState(false);
+  const [cpDraftByCu, setCpDraftByCu] = useState({});
 
   // draftCache: { [cuCodeCanon]: { waItems:[...] , generatedAt } }
   const [draftCache, setDraftCache] = useState({});
@@ -177,6 +178,23 @@ export default function CpDashboard() {
     }
   }
 
+async function loadCpDraft(cuCode) {
+  if (!sessionId || !cuCode) return null;
+
+  try {
+    const r = await fetch(
+      `${API_BASE}/api/cp/${encodeURIComponent(sessionId)}/${encodeURIComponent(cuCode)}?version=latest`
+    );
+    if (!r.ok) return null;
+
+    const j = await r.json();
+    return j?.cp || null;
+  } catch (e) {
+    console.error("loadCpDraft error:", e);
+    return null;
+  }
+}
+  
   // Load draftCache dari sessionStorage bila masuk page
   useEffect(() => {
     if (!sessionId) return;
