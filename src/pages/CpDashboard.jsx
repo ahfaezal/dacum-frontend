@@ -274,14 +274,31 @@ async function loadCpDraft(cuCode) {
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j?.error || "Gagal jana WS/PC (AI Assisted).");
 
-      const normalized = normalizeDraftFromApi(j, cu);
+      // ✅ Ambil cpDraft sebagai root sebenar
+      const draftObj = j?.cpDraft || j?.draft || j?.cp || j;
 
+      // ✅ normalize guna root yang betul
+      const normalized = normalizeDraftFromApi(draftObj, cu);
+
+    function normalizeDraftFromApi(root, cuFromCpc) {
+
+      const out = { waItems: [] };
+
+      const waItems =
+        (Array.isArray(root?.waItems) && root.waItems) ||
+        (Array.isArray(root?.wa) && root.wa) ||
+        (Array.isArray(root?.items) && root.items) ||
+        [];
+      ...
+    }
+      
       const payloadToStore = {
         sessionId,
         cuCode,
         cuTitle,
         ...normalized,
-        generatedAt: new Date().toISOString(),
+        // kalau backend dah bagi generatedAt, guna itu
+        generatedAt: draftObj?.generatedAt || new Date().toISOString(),
       };
 
       // cache state
