@@ -10,6 +10,7 @@ import CpcPage from "./CpcPage.jsx";
 // FASA 3 (CP)
 import CpDashboard from "./pages/CpDashboard.jsx";
 import CpEditor from "./pages/CpEditor.jsx";
+import CoCUDashboard from "./pages/CoCUDashboard.jsx";
 
 /**
  * Router ringkas guna hash (#)
@@ -21,6 +22,7 @@ import CpEditor from "./pages/CpEditor.jsx";
  *  - #/cluster    -> ClusterPage
  *  - #/cpc        -> CpcPage
  *  - #/cp         -> CpDashboard
+ *  - #/cp         -> CoCUDashboard
  *  - #/cp-editor  -> CpEditor
  */
 function Router() {
@@ -43,6 +45,7 @@ function Router() {
   // ⚠️ Susunan ini betul: cp-editor mesti di atas cp (supaya tak kena match "#/cp")
   if (hash.startsWith("#/cp-editor")) return <CpEditor />;
   if (hash.startsWith("#/cp")) return <CpDashboard />;
+  if (hash.startsWith("#/cp")) return <CoCUDashboard />;
 
   /**
    * DEFAULT:
