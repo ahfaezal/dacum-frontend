@@ -83,6 +83,58 @@ function pad2(n) {
   return String(x).padStart(2, "0");
 }
 
+function normalizeWsTitle(raw = "") {
+  let t = safeStr(raw);
+
+  // buang frasa yang biasanya mengganggu gaya NOSS
+  t = t.replace(/\bbagi\s+"[^"]+"\s*/gi, "");         // buang: bagi "...."
+  t = t.replace(/\buntuk\s+"[^"]+"\s*/gi, "");        // buang: untuk "...."
+  t = t.replace(/"[^"]+"/g, "");                      // buang petikan "...."
+  t = t.replace(/\s+berdasarkan\s+SOP\/rekod.*$/i, ""); // buang ekor SOP/rekod
+  t = t.replace(/\s+berdasarkan\s+SOP.*$/i, "");       // buang ekor SOP
+  t = t.replace(/\s+berdasarkan\s+.*$/i, "");          // buang ekor berdasarkan...
+  t = t.replace(/\s+/g, " ").trim();
+
+  const lower = t.toLowerCase();
+
+  // pattern ringkasan (boleh tambah kemudian)
+  if (lower.includes("semak") && lower.includes("keperluan")) return "Semak keperluan kerja";
+  if (lower.includes("sediakan") && (lower.includes("dokumen") || lower.includes("borang") || lower.includes("jadual")))
+    return "Sediakan dokumen pelaksanaan latihan";
+  if (lower.startsWith("laksanakan") || lower.startsWith("laksana") || lower.includes("laksanakan"))
+    return "Laksana program latihan";
+
+  // fallback: ambil ayat pertama / potong panjang
+  const first = t.split(".")[0].trim();
+  return first || "xxx";
+}
+
+function normalizePc(rawPc = "") {
+  let p = safeStr(rawPc);
+
+  // buang "Telah" di depan dan elak 'telah ... telah ...'
+  p = p.replace(/^\s*telah\s+/i, "");
+  p = p.replace(/\btelah\s+/gi, ""); // buang telah di tengah jika berlebihan
+  p = p.replace(/\s+/g, " ").trim();
+
+  const lower = p.toLowerCase();
+
+  // standardkan PC ikut contoh mantap Ts. Faezal
+  if (lower.includes("keperluan kerja")) {
+    return "Keperluan kerja disemak dan direkodkan berdasarkan SOP.";
+  }
+  if (lower.includes("dokumen") || lower.includes("borang") || lower.includes("jadual")) {
+    return "Dokumen pelaksanaan disediakan berdasarkan senarai semak.";
+  }
+  if (lower.includes("pelaksanaan") || lower.includes("direkodkan") || lower.includes("bukti")) {
+    return "Pelaksanaan latihan direkodkan bersama bukti seperti laporan, rekod dan borang berkaitan.";
+  }
+
+  // fallback: pastikan ada noktah di hujung (kemas)
+  if (p && !/[.!?]$/.test(p)) p = p + ".";
+  return p || "xxx";
+}
+
 /**
  * Normalize draft yang balik dari backend (kalis peluru).
  * Menyokong struktur:
@@ -109,22 +161,17 @@ function normalizeDraftFromApi(apiObjOrDraft, cuFromCpc) {
     [];
 
   if (waItems.length) {
+    const waFromCpc = extractWaListFromCu(cuFromCpc) || [];
+
     out.waItems = waItems.map((w, wi) => {
+      const cpcWa = waFromCpc[wi];
+
       const waCode = safeStr(
-        w?.waCode ||
-          w?.code ||
-          w?.id ||
-          // fallback: guna WA dari CPC ikut index
-          extractWaListFromCu(cuFromCpc)?.[wi]?.waCode ||
-          `w${pad2(wi + 1)}`
+        w?.waCode || w?.code || w?.id || cpcWa?.waCode || `w${pad2(wi + 1)}`
       ).toLowerCase();
 
       const waTitle = safeStr(
-        w?.waTitle ||
-          w?.title ||
-          w?.name ||
-          extractWaListFromCu(cuFromCpc)?.[wi]?.waTitle ||
-          `WA ${wi + 1}`
+        w?.waTitle || w?.title || w?.name || cpcWa?.waTitle || `WA ${wi + 1}`
       );
 
       // 2) WS array (backend mungkin guna ws / wsItems / steps / workSteps)
@@ -137,13 +184,15 @@ function normalizeDraftFromApi(apiObjOrDraft, cuFromCpc) {
 
       const ws = wsArr.map((s, si) => {
         const wsCode = safeStr(s?.wsCode || s?.code || `${wi + 1}.${si + 1}`);
-        const wsTitle = safeStr(s?.wsTitle || s?.title || s?.text || "xxx");
 
-        // PC mungkin berada di s.pc atau s.performanceCriteria atau s.criteria
-        // Ada backend letak pc sebagai array; kita join jika perlu
+        const rawWsTitle = safeStr(s?.wsTitle || s?.title || s?.text || "xxx");
+        const wsTitle = normalizeWsTitle(rawWsTitle);
+
+        // PC mungkin string atau array
         let pcVal = s?.pc ?? s?.performanceCriteria ?? s?.criteria ?? "xxx";
         if (Array.isArray(pcVal)) pcVal = pcVal.map((x) => safeStr(x)).filter(Boolean).join("; ");
-        const pc = safeStr(pcVal || "xxx");
+
+        const pc = normalizePc(pcVal);
 
         return { wsCode, wsTitle, pc };
       });
@@ -153,6 +202,17 @@ function normalizeDraftFromApi(apiObjOrDraft, cuFromCpc) {
 
     return out;
   }
+
+  // 3) Kalau backend tak bagi grouping, fallback dari CPC supaya UI tak rosak
+  const waFromCpc = extractWaListFromCu(cuFromCpc) || [];
+  out.waItems = waFromCpc.map((wa, wi) => ({
+    waCode: getWaIdCanonical(wa) || `w${pad2(wi + 1)}`,
+    waTitle: getWaTitle(wa) || `WA ${wi + 1}`,
+    ws: [],
+  }));
+
+  return out;
+}
 
   // 3) Kalau backend tak bagi grouping, fallback dari CPC supaya UI tak rosak
   const waFromCpc = extractWaListFromCu(cuFromCpc) || [];
