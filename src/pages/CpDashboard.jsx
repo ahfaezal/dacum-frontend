@@ -83,55 +83,66 @@ function pad2(n) {
   return String(x).padStart(2, "0");
 }
 
-function normalizeWsTitle(raw = "") {
-  let t = safeStr(raw);
-
-  // buang frasa yang biasanya mengganggu gaya NOSS
-  t = t.replace(/\bbagi\s+"[^"]+"\s*/gi, "");         // buang: bagi "...."
-  t = t.replace(/\buntuk\s+"[^"]+"\s*/gi, "");        // buang: untuk "...."
-  t = t.replace(/"[^"]+"/g, "");                      // buang petikan "...."
-  t = t.replace(/\s+berdasarkan\s+SOP\/rekod.*$/i, ""); // buang ekor SOP/rekod
-  t = t.replace(/\s+berdasarkan\s+SOP.*$/i, "");       // buang ekor SOP
-  t = t.replace(/\s+berdasarkan\s+.*$/i, "");          // buang ekor berdasarkan...
-  t = t.replace(/\s+/g, " ").trim();
-
-  const lower = t.toLowerCase();
-
-  // pattern ringkasan (boleh tambah kemudian)
-  if (lower.includes("semak") && lower.includes("keperluan")) return "Semak keperluan kerja";
-  if (lower.includes("sediakan") && (lower.includes("dokumen") || lower.includes("borang") || lower.includes("jadual")))
-    return "Sediakan dokumen pelaksanaan latihan";
-  if (lower.startsWith("laksanakan") || lower.startsWith("laksana") || lower.includes("laksanakan"))
-    return "Laksana program latihan";
-
-  // fallback: ambil ayat pertama / potong panjang
-  const first = t.split(".")[0].trim();
-  return first || "xxx";
+function escapeRegExp(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+function cleanQuotesAndRefs(t) {
+  let x = safeStr(t);
+
+  // buang petikan "...", dan frasa bagi/untuk "..."
+  x = x.replace(/\bbagi\s+"[^"]+"\s*/gi, "");
+  x = x.replace(/\buntuk\s+"[^"]+"\s*/gi, "");
+  x = x.replace(/"[^"]+"/g, "");
+
+  // buang ekor yang terlalu umum
+  x = x.replace(/\s+berdasarkan\s+SOP\/rekod.*$/i, "");
+  x = x.replace(/\s+berdasarkan\s+SOP.*$/i, "");
+  x = x.replace(/\s+berdasarkan\s+.*$/i, "");
+
+  // kemas whitespace
+  x = x.replace(/\s+/g, " ").trim();
+  return x;
+}
+
+// ✅ WS: ringkaskan, tapi kekalkan maksud unik
+function normalizeWsTitle(rawWs = "", waTitle = "") {
+  let t = cleanQuotesAndRefs(rawWs);
+
+  // buang pengulangan WA title jika ada (tanpa buang isi langkah)
+  const waT = safeStr(waTitle);
+  if (waT) {
+    const re = new RegExp(escapeRegExp(waT), "ig");
+    t = t.replace(re, "").replace(/\s+/g, " ").trim();
+  }
+
+  // buang frasa pengisi yang tak perlu (kekal objek penting)
+  t = t.replace(/\b(bagi|untuk)\b\s*/gi, "");
+  t = t.replace(/\b(yang berkaitan|berkaitan)\b/gi, "");
+  t = t.replace(/\s+/g, " ").trim();
+
+  // pastikan ayat jadi “frasa kerja” ringkas (tanpa noktah panjang)
+  t = t.replace(/\.$/, "");
+
+  return t || "xxx";
+}
+
+// ✅ PC: buang “Telah” berganda, kemaskan, tetapi kekalkan isi unik
 function normalizePc(rawPc = "") {
   let p = safeStr(rawPc);
 
-  // buang "Telah" di depan dan elak 'telah ... telah ...'
+  // buang "Telah" di depan sahaja (bukan replace ayat jadi template)
   p = p.replace(/^\s*telah\s+/i, "");
-  p = p.replace(/\btelah\s+/gi, ""); // buang telah di tengah jika berlebihan
+
+  // elak "telah ... telah ..." (buang telah kedua/lebih)
+  p = p.replace(/\btelah\s+/gi, "");
+
+  // kemas whitespace
   p = p.replace(/\s+/g, " ").trim();
 
-  const lower = p.toLowerCase();
+  // pastikan ada noktah untuk gaya PC
+  if (p && !/[.!?]$/.test(p)) p += ".";
 
-  // standardkan PC ikut contoh mantap Ts. Faezal
-  if (lower.includes("keperluan kerja")) {
-    return "Keperluan kerja disemak dan direkodkan berdasarkan SOP.";
-  }
-  if (lower.includes("dokumen") || lower.includes("borang") || lower.includes("jadual")) {
-    return "Dokumen pelaksanaan disediakan berdasarkan senarai semak.";
-  }
-  if (lower.includes("pelaksanaan") || lower.includes("direkodkan") || lower.includes("bukti")) {
-    return "Pelaksanaan latihan direkodkan bersama bukti seperti laporan, rekod dan borang berkaitan.";
-  }
-
-  // fallback: pastikan ada noktah di hujung (kemas)
-  if (p && !/[.!?]$/.test(p)) p = p + ".";
   return p || "xxx";
 }
 
@@ -186,7 +197,7 @@ function normalizeDraftFromApi(apiObjOrDraft, cuFromCpc) {
         const wsCode = safeStr(s?.wsCode || s?.code || `${wi + 1}.${si + 1}`);
 
         const rawWsTitle = safeStr(s?.wsTitle || s?.title || s?.text || "xxx");
-        const wsTitle = normalizeWsTitle(rawWsTitle);
+        const wsTitle = normalizeWsTitle(rawWsTitle, waTitle);
 
         // PC mungkin string atau array
         let pcVal = s?.pc ?? s?.performanceCriteria ?? s?.criteria ?? "xxx";
