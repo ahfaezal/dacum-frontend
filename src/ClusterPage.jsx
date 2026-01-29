@@ -339,19 +339,39 @@ export default function ClusterPage({ onBack }) {
     return { clustersDraft, unassignedDraft, overridesDraft };
   }
 
-const r = await apiPost(`/api/cluster/apply`, {
-  sessionId: sid,
+  // ✅ APPLY AI (MERGE) - mesti async, dan semua await duduk dalam function ini
+  async function applyMerge() {
+    const sid = sidTrim;
+    if (!sid) return alert("Sila isi Session dulu.");
+    if (!agreed)
+      return alert("Sila klik Agreed dahulu sebelum Apply AI (Merge).");
 
-  // ✅ INI YANG PENTING — hantar clustering yang telah diedit
-  clusters: clusters.map((c) => ({
-    id: c.id,
-    title: c.title,
-    cardIds: (c.items || []).map((it) => String(it.id)),
-  })),
+    setBusy(true);
+    setErr("");
 
-  unassigned: (unassigned || []).map((u) => String(u.id)),
-  unassignedIds: (unassigned || []).map((u) => String(u.id)),
-});
+    try {
+      // Optional: masih simpan draft untuk backward compatibility / upgrade backend
+      const draft = buildDraftPayload();
+
+      const r = await apiPost(`/api/cluster/apply`, {
+        sessionId: sid,
+
+        // ✅ INI YANG PENTING — hantar clustering yang telah diedit (tajuk + susunan kad)
+        clusters: (clusters || []).map((c) => ({
+          id: String(c.id),
+          title: String(c.title || "").trim(),
+          cardIds: (c.items || []).map((it) => normId(it?.id)).filter(Boolean),
+        })),
+
+        // ✅ Unassigned
+        unassigned: (unassigned || []).map((u) => normId(u?.id)).filter(Boolean),
+        unassignedIds: (unassigned || [])
+          .map((u) => normId(u?.id))
+          .filter(Boolean),
+
+        // draft (tak mengganggu kalau backend belum guna)
+        ...draft,
+      });
 
       // refresh output CU/WA
       await loadCuWaOutput(sid);
@@ -359,59 +379,6 @@ const r = await apiPost(`/api/cluster/apply`, {
       // refresh cluster result
       setClusterResult(r);
       await loadResult();
-    } catch (e) {
-      safeSetErr(e);
-      alert(String(e?.message || e));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function buildMyspikeIndex() {
-    setBusy(true);
-    setErr("");
-    try {
-      const r = await apiPost(`/api/myspike/index/build`, {});
-      alert(`Index MySPIKE siap. Total: ${r?.total ?? "?"}`);
-    } catch (e) {
-      safeSetErr(e);
-      alert(String(e?.message || e));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function runMyspikeComparison() {
-    const sid = sidTrim;
-    if (!sid) return alert("Sila isi Session dulu.");
-
-    setBusy(true);
-    setErr("");
-
-    try {
-      const out = await apiGet(`/api/session/cus/${encodeURIComponent(sid)}`);
-      const cus = Array.isArray(out?.cus)
-        ? out.cus
-        : Array.isArray(out?.items)
-        ? out.items
-        : [];
-
-      if (!cus.length) {
-        alert(
-          "Tiada CU untuk compare. Sila Apply AI (Merge) atau pastikan session.cus wujud."
-        );
-        return;
-      }
-
-      const r = await apiPost(`/api/s2/compare`, {
-        sessionId: sid,
-        cus,
-        options: { thresholdAda: 0.78, topK: 3 },
-        meta: { sessionId: sid },
-      });
-
-      setCuWaOutput((prev) => ({ ...(prev || {}), myspikeCompare: r }));
-      alert("MySPIKE Comparison siap.");
     } catch (e) {
       safeSetErr(e);
       alert(String(e?.message || e));
