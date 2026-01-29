@@ -1,5 +1,4 @@
 import React, { useState } from "react";
-import "./wim.css";
 
 export default function WIMPage() {
   const [nossCode, setNossCode] = useState("");
