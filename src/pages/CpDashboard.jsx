@@ -214,17 +214,6 @@ function normalizeDraftFromApi(apiObjOrDraft, cuFromCpc) {
   return out;
 }
 
-  // 3) Kalau backend tak bagi grouping, fallback dari CPC supaya UI tak rosak
-  const waFromCpc = extractWaListFromCu(cuFromCpc) || [];
-  out.waItems = waFromCpc.map((wa, wi) => ({
-    waCode: getWaIdCanonical(wa) || `w${pad2(wi + 1)}`,
-    waTitle: getWaTitle(wa) || `WA ${wi + 1}`,
-    ws: [],
-  }));
-
-  return out;
-}
-
 export default function CpDashboard() {
   const sessionId = getQueryParam("session");
 
