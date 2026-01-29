@@ -203,7 +203,7 @@ export default function ClusterPage({ onBack }) {
   function getCardText(card) {
     const id = normId(card?.id);
     const ov = overrides?.[id]?.activityOverride;
-    return (ov !== undefined && ov !== null && String(ov).trim() !== "")
+    return ov !== undefined && ov !== null && String(ov).trim() !== ""
       ? String(ov)
       : String(card?.activity || "").trim();
   }
@@ -339,7 +339,6 @@ export default function ClusterPage({ onBack }) {
     return { clustersDraft, unassignedDraft, overridesDraft };
   }
 
-  // ✅ APPLY AI (MERGE) - mesti async, dan semua await duduk dalam function ini
   async function applyMerge() {
     const sid = sidTrim;
     if (!sid) return alert("Sila isi Session dulu.");
@@ -350,26 +349,29 @@ export default function ClusterPage({ onBack }) {
     setErr("");
 
     try {
-      // Optional: masih simpan draft untuk backward compatibility / upgrade backend
+      // ✅ draft untuk backward compatibility / upgrade backend
       const draft = buildDraftPayload();
+
+      // ✅ FIX UTAMA: hantar clustering yang telah diedit (tajuk + susunan kad)
+      const clustersPayload = (clusters || []).map((c) => ({
+        id: String(c.id),
+        title: String(c.title || "").trim(),
+        cardIds: (c.items || []).map((it) => normId(it?.id)).filter(Boolean),
+      }));
+
+      const unassignedIds = (unassigned || [])
+        .map((u) => normId(u?.id))
+        .filter(Boolean);
 
       const r = await apiPost(`/api/cluster/apply`, {
         sessionId: sid,
 
-        // ✅ INI YANG PENTING — hantar clustering yang telah diedit (tajuk + susunan kad)
-        clusters: (clusters || []).map((c) => ({
-          id: String(c.id),
-          title: String(c.title || "").trim(),
-          cardIds: (c.items || []).map((it) => normId(it?.id)).filter(Boolean),
-        })),
+        // ✅ inilah payload yang elak tajuk revert selepas Apply
+        clusters: clustersPayload,
+        unassigned: unassignedIds,
+        unassignedIds, // safety (kalau backend expect nama ini)
 
-        // ✅ Unassigned
-        unassigned: (unassigned || []).map((u) => normId(u?.id)).filter(Boolean),
-        unassignedIds: (unassigned || [])
-          .map((u) => normId(u?.id))
-          .filter(Boolean),
-
-        // draft (tak mengganggu kalau backend belum guna)
+        // kekalkan draft (tak mengganggu jika backend belum guna)
         ...draft,
       });
 
@@ -387,14 +389,64 @@ export default function ClusterPage({ onBack }) {
     }
   }
 
+  async function buildMyspikeIndex() {
+    setBusy(true);
+    setErr("");
+    try {
+      const r = await apiPost(`/api/myspike/index/build`, {});
+      alert(`Index MySPIKE siap. Total: ${r?.total ?? "?"}`);
+    } catch (e) {
+      safeSetErr(e);
+      alert(String(e?.message || e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function runMyspikeComparison() {
+    const sid = sidTrim;
+    if (!sid) return alert("Sila isi Session dulu.");
+
+    setBusy(true);
+    setErr("");
+
+    try {
+      const out = await apiGet(`/api/session/cus/${encodeURIComponent(sid)}`);
+      const cus = Array.isArray(out?.cus)
+        ? out.cus
+        : Array.isArray(out?.items)
+        ? out.items
+        : [];
+
+      if (!cus.length) {
+        alert(
+          "Tiada CU untuk compare. Sila Apply AI (Merge) atau pastikan session.cus wujud."
+        );
+        return;
+      }
+
+      const r = await apiPost(`/api/s2/compare`, {
+        sessionId: sid,
+        cus,
+        options: { thresholdAda: 0.78, topK: 3 },
+        meta: { sessionId: sid },
+      });
+
+      setCuWaOutput((prev) => ({ ...(prev || {}), myspikeCompare: r }));
+      alert("MySPIKE Comparison siap.");
+    } catch (e) {
+      safeSetErr(e);
+      alert(String(e?.message || e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   // ========= EDIT: CLUSTER =========
   function addCluster() {
     if (locked) return;
     const id = uid("cl_");
-    setClusters((prev) => [
-      ...prev,
-      { id, title: "Cluster Baharu", items: [] },
-    ]);
+    setClusters((prev) => [...prev, { id, title: "Cluster Baharu", items: [] }]);
     setAgreed(false);
     setEditingClusterId(id);
   }
@@ -453,14 +505,19 @@ export default function ClusterPage({ onBack }) {
   function removeCardFromCluster(prevClusters, fromClusterId, cardId) {
     return prevClusters.map((c) => {
       if (c.id !== fromClusterId) return c;
-      return { ...c, items: (c.items || []).filter((it) => normId(it.id) !== cardId) };
+      return {
+        ...c,
+        items: (c.items || []).filter((it) => normId(it.id) !== cardId),
+      };
     });
   }
 
   function addCardToCluster(prevClusters, toClusterId, cardObj) {
     return prevClusters.map((c) => {
       if (c.id !== toClusterId) return c;
-      const exists = (c.items || []).some((it) => normId(it.id) === normId(cardObj.id));
+      const exists = (c.items || []).some(
+        (it) => normId(it.id) === normId(cardObj.id)
+      );
       if (exists) return c;
       return { ...c, items: [...(c.items || []), cardObj] };
     });
@@ -506,9 +563,13 @@ export default function ClusterPage({ onBack }) {
 
     // 1) remove dari asal
     if (from?.type === "cluster" && from?.clusterId) {
-      setClusters((prev) => removeCardFromCluster(prev, from.clusterId, cardId));
+      setClusters((prev) =>
+        removeCardFromCluster(prev, from.clusterId, cardId)
+      );
     } else if (from?.type === "unassigned") {
-      setUnassigned((prev) => (prev || []).filter((u) => normId(u.id) !== cardId));
+      setUnassigned((prev) =>
+        (prev || []).filter((u) => normId(u.id) !== cardId)
+      );
     }
 
     // 2) add ke dest cluster
@@ -539,7 +600,9 @@ export default function ClusterPage({ onBack }) {
 
     // remove dari cluster asal
     if (from?.type === "cluster" && from?.clusterId) {
-      setClusters((prev) => removeCardFromCluster(prev, from.clusterId, cardId));
+      setClusters((prev) =>
+        removeCardFromCluster(prev, from.clusterId, cardId)
+      );
     }
 
     // add ke unassigned jika belum ada
@@ -553,43 +616,30 @@ export default function ClusterPage({ onBack }) {
     dragRef.current = null;
   }
 
-async function doAgreed() {
-  if (!clusters.length) {
-    alert("Tiada clustering untuk di-Agreed.\nSila Run AI (Clustering) dahulu.");
-    return;
-  }
-  const hasEmptyTitle = clusters.some((c) => !String(c.title || "").trim());
-  if (hasEmptyTitle) {
-    alert("Sila pastikan semua tajuk cluster diisi sebelum Agreed.");
-    return;
-  }
+  function doAgreed() {
+    if (!clusters.length) {
+      alert("Tiada clustering untuk di-Agreed. Sila Run AI (Clustering) dahulu.");
+      return;
+    }
+    const hasEmptyTitle = clusters.some((c) => !String(c.title || "").trim());
+    if (hasEmptyTitle) {
+      alert("Sila pastikan semua tajuk cluster diisi sebelum Agreed.");
+      return;
+    }
 
-  setBusy(true);
-  setErr("");
-  try {
-    // ✅ simpan versi yang telah diedit ke backend
-    await apiPost(`/api/cluster/agreed`, {
-      sessionId: sidTrim,
-      agreed: true,
-      clusters: clusters.map((c) => ({
-        id: c.id,
-        title: c.title,
-        // simpan hanya card ids supaya ringan
-        cardIds: (c.items || []).map((it) => String(it.id)),
-      })),
-      unassigned: (unassigned || []).map((u) => String(u.id)),
-    });
+    // optional: cluster kosong disyorkan buang
+    const hasEmptyCluster = clusters.some((c) => (c.items || []).length === 0);
+    if (hasEmptyCluster) {
+      const ok = confirm(
+        "Ada cluster kosong (tiada kad). Disyorkan buang atau pindahkan kad. Teruskan Agreed?"
+      );
+      if (!ok) return;
+    }
 
     setAgreed(true);
-    // optional: reload supaya UI ikut sumber backend
-    await loadResult();
-  } catch (e) {
-    setErr(String(e?.message || e));
-    alert(String(e?.message || e));
-  } finally {
-    setBusy(false);
+    setEditingClusterId(null);
+    setEditingCardKey(null);
   }
-}
 
   // Auto-load bila masuk page
   useEffect(() => {
@@ -704,7 +754,8 @@ async function doAgreed() {
         <h2 style={{ marginTop: 0 }}>Edit Clustering (sebelum Merge)</h2>
         <div style={{ color: "#555", marginBottom: 10 }}>
           Anda boleh: edit tajuk cluster, edit teks kad (override), dan drag & drop
-          kad antara cluster / Unassigned. Selepas selesai, tekan <b>Agreed</b> untuk lock sebelum Apply AI (Merge).
+          kad antara cluster / Unassigned. Selepas selesai, tekan <b>Agreed</b>{" "}
+          untuk lock sebelum Apply AI (Merge).
         </div>
 
         <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
@@ -715,7 +766,13 @@ async function doAgreed() {
             Agreed
           </button>
           {locked ? (
-            <span style={{ color: "#0a7a2a", alignSelf: "center", fontWeight: 700 }}>
+            <span
+              style={{
+                color: "#0a7a2a",
+                alignSelf: "center",
+                fontWeight: 700,
+              }}
+            >
               Locked
             </span>
           ) : null}
@@ -738,7 +795,11 @@ async function doAgreed() {
                   padding: 12,
                   background: "#fff",
                 }}
-                title={locked ? "Locked" : "Drop kad di sini untuk pindahkan ke cluster ini"}
+                title={
+                  locked
+                    ? "Locked"
+                    : "Drop kad di sini untuk pindahkan ke cluster ini"
+                }
               >
                 {/* Cluster Header */}
                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -746,7 +807,9 @@ async function doAgreed() {
                     {editingClusterId === c.id && !locked ? (
                       <input
                         value={c.title}
-                        onChange={(e) => updateClusterTitle(c.id, e.target.value)}
+                        onChange={(e) =>
+                          updateClusterTitle(c.id, e.target.value)
+                        }
                         onBlur={() => setEditingClusterId(null)}
                         onKeyDown={(e) => {
                           if (e.key === "Enter") setEditingClusterId(null);
@@ -762,8 +825,16 @@ async function doAgreed() {
                         }}
                       />
                     ) : (
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <div style={{ fontSize: 16, fontWeight: 800 }}>{c.title}</div>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
+                        }}
+                      >
+                        <div style={{ fontSize: 16, fontWeight: 800 }}>
+                          {c.title}
+                        </div>
                         <button
                           disabled={busy || locked}
                           onClick={() => setEditingClusterId(c.id)}
@@ -792,7 +863,9 @@ async function doAgreed() {
                 {/* Cards */}
                 <div style={{ marginTop: 10 }}>
                   {(c.items || []).length ? (
-                    <ul style={{ margin: "6px 0 0 18px", display: "grid", gap: 8 }}>
+                    <ul
+                      style={{ margin: "6px 0 0 18px", display: "grid", gap: 8 }}
+                    >
                       {c.items.map((it) => {
                         const cardId = normId(it?.id);
                         const key = `c:${c.id}:${cardId}`;
@@ -803,7 +876,11 @@ async function doAgreed() {
                             key={cardId}
                             draggable={!locked}
                             onDragStart={(e) =>
-                              onDragStartCard(e, { type: "cluster", clusterId: c.id }, cardId)
+                              onDragStartCard(
+                                e,
+                                { type: "cluster", clusterId: c.id },
+                                cardId
+                              )
                             }
                             style={{
                               margin: 0,
@@ -812,14 +889,29 @@ async function doAgreed() {
                               border: "1px solid #eee",
                               background: "#fafafa",
                             }}
-                            title={locked ? "Locked" : "Drag untuk pindah ke cluster lain / Unassigned"}
+                            title={
+                              locked
+                                ? "Locked"
+                                : "Drag untuk pindah ke cluster lain / Unassigned"
+                            }
                           >
-                            <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+                            <div
+                              style={{
+                                display: "flex",
+                                gap: 8,
+                                alignItems: "flex-start",
+                              }}
+                            >
                               <div style={{ flex: 1 }}>
                                 {editing ? (
                                   <textarea
-                                    value={overrides?.[cardId]?.activityOverride ?? getCardText(it)}
-                                    onChange={(e) => setCardOverride(cardId, e.target.value)}
+                                    value={
+                                      overrides?.[cardId]?.activityOverride ??
+                                      getCardText(it)
+                                    }
+                                    onChange={(e) =>
+                                      setCardOverride(cardId, e.target.value)
+                                    }
                                     onBlur={() => setEditingCardKey(null)}
                                     rows={2}
                                     autoFocus
@@ -837,16 +929,15 @@ async function doAgreed() {
                                   </div>
                                 )}
 
-                                <div style={{ marginTop: 4, fontSize: 12, color: "#777" }}>
-                                  {it.time ? <span>({it.time}) </span> : null}
-                                  {it._src ? <span>[{it._src}] </span> : null}
-                                  {it.name ? <span>— {it.name}</span> : null}
-                                </div>
+                                {/* ✅ Buang timestamp/panel name untuk elak implikasi kepada panel */}
+                                {/* (Jika perlu, boleh papar hanya _src tanpa name/time) */}
                               </div>
 
                               <button
                                 disabled={busy || locked}
-                                onClick={() => setEditingCardKey(editing ? null : key)}
+                                onClick={() =>
+                                  setEditingCardKey(editing ? null : key)
+                                }
                                 title="Edit teks kad"
                                 style={{ height: 28 }}
                               >
@@ -858,7 +949,9 @@ async function doAgreed() {
                       })}
                     </ul>
                   ) : (
-                    <div style={{ color: "#666" }}>Tiada aktiviti dalam cluster ini.</div>
+                    <div style={{ color: "#666" }}>
+                      Tiada aktiviti dalam cluster ini.
+                    </div>
                   )}
                 </div>
               </div>
@@ -875,7 +968,9 @@ async function doAgreed() {
                 padding: 12,
                 background: "#fff",
               }}
-              title={locked ? "Locked" : "Drop kad di sini untuk pindahkan ke Unassigned"}
+              title={
+                locked ? "Locked" : "Drop kad di sini untuk pindahkan ke Unassigned"
+              }
             >
               <h3 style={{ margin: "8px 0" }}>Unassigned</h3>
 
@@ -902,12 +997,23 @@ async function doAgreed() {
                         }}
                         title={locked ? "Locked" : "Drag untuk pindah ke cluster"}
                       >
-                        <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+                        <div
+                          style={{
+                            display: "flex",
+                            gap: 8,
+                            alignItems: "flex-start",
+                          }}
+                        >
                           <div style={{ flex: 1 }}>
                             {editing ? (
                               <textarea
-                                value={overrides?.[cardId]?.activityOverride ?? getCardText(u)}
-                                onChange={(e) => setCardOverride(cardId, e.target.value)}
+                                value={
+                                  overrides?.[cardId]?.activityOverride ??
+                                  getCardText(u)
+                                }
+                                onChange={(e) =>
+                                  setCardOverride(cardId, e.target.value)
+                                }
                                 onBlur={() => setEditingCardKey(null)}
                                 rows={2}
                                 autoFocus
@@ -925,16 +1031,14 @@ async function doAgreed() {
                               </div>
                             )}
 
-                            <div style={{ marginTop: 4, fontSize: 12, color: "#777" }}>
-                              {u.time ? <span>({u.time}) </span> : null}
-                              {u._src ? <span>[{u._src}] </span> : null}
-                              {u.name ? <span>— {u.name}</span> : null}
-                            </div>
+                            {/* ✅ Buang timestamp/panel name untuk el note */}
                           </div>
 
                           <button
                             disabled={busy || locked}
-                            onClick={() => setEditingCardKey(editing ? null : key)}
+                            onClick={() =>
+                              setEditingCardKey(editing ? null : key)
+                            }
                             title="Edit teks kad"
                             style={{ height: 28 }}
                           >
@@ -999,9 +1103,7 @@ async function doAgreed() {
                 const cuId = String(
                   cu?.cuId || `CU-${String(idx + 1).padStart(2, "0")}`
                 );
-                const cuTitle = String(
-                  cu?.cuTitle || cu?.title || "Untitled CU"
-                );
+                const cuTitle = String(cu?.cuTitle || cu?.title || "Untitled CU");
                 const activities = Array.isArray(cu?.activities)
                   ? cu.activities
                   : [];
@@ -1109,8 +1211,8 @@ function MySpikeComparisonView({ data }) {
           <div>
             <div className="text-lg font-bold">MySPIKE Comparison</div>
             <div className="text-sm text-gray-600">
-              Session: <span className="font-semibold">{sessionId}</span> · Source:{" "}
-              <span className="font-semibold">{meta.source || "—"}</span>
+              Session: <span className="font-semibold">{sessionId}</span> ·
+              Source: <span className="font-semibold">{meta.source || "—"}</span>
             </div>
           </div>
 
@@ -1145,7 +1247,9 @@ function MySpikeComparisonView({ data }) {
         <div className="mt-3 grid grid-cols-1 md:grid-cols-5 gap-2 text-sm">
           <div className="p-2 rounded bg-gray-50 border">
             <div className="text-gray-500">Total CU</div>
-            <div className="font-semibold">{summary.totalCU ?? results.length}</div>
+            <div className="font-semibold">
+              {summary.totalCU ?? results.length}
+            </div>
           </div>
           <div className="p-2 rounded bg-gray-50 border">
             <div className="text-gray-500">Candidates</div>
@@ -1201,11 +1305,18 @@ function MySpikeComparisonView({ data }) {
                   <div className="flex items-center gap-3">
                     <Badge status={dec.status} />
                     <div className="text-xs text-gray-700">
-                      Best: <span className="font-semibold">{fmtNum(dec.bestScore)}</span>
+                      Best:{" "}
+                      <span className="font-semibold">{fmtNum(dec.bestScore)}</span>
                       {" · "}
-                      Th: <span className="font-semibold">{fmtNum(dec.thresholdAda, 2)}</span>
+                      Th:{" "}
+                      <span className="font-semibold">
+                        {fmtNum(dec.thresholdAda, 2)}
+                      </span>
                       {" · "}
-                      Conf: <span className="font-semibold">{dec.confidence || "—"}</span>
+                      Conf:{" "}
+                      <span className="font-semibold">
+                        {dec.confidence || "—"}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -1228,7 +1339,9 @@ function MySpikeComparisonView({ data }) {
                         matches.map((m, j) => (
                           <tr key={j}>
                             <td className="p-2 border">{j + 1}</td>
-                            <td className="p-2 border font-mono">{m.cuCode || "—"}</td>
+                            <td className="p-2 border font-mono">
+                              {m.cuCode || "—"}
+                            </td>
                             <td className="p-2 border">{m.cuTitle || "—"}</td>
                             <td className="p-2 border">{fmtNum(m.score)}</td>
                           </tr>
