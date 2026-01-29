@@ -11,19 +11,21 @@ import CpcPage from "./CpcPage.jsx";
 import CpDashboard from "./pages/CpDashboard.jsx";
 import CpEditor from "./pages/CpEditor.jsx";
 import CoCUDashboard from "./pages/CoCUDashboard.jsx";
+import CoCUEditor from "./pages/CoCUEditor.jsx";
 
 /**
  * Router ringkas guna hash (#)
  * Elak react-router untuk deploy Vercel yang laju & stabil
  *
  * Routing:
- *  - #/board      -> LiveBoard
- *  - #/panel      -> PanelPage
- *  - #/cluster    -> ClusterPage
- *  - #/cpc        -> CpcPage
- *  - #/cp         -> CpDashboard
- *  - #/cp         -> CoCUDashboard
- *  - #/cp-editor  -> CpEditor
+ *  - #/board      -   > LiveBoard
+ *  - #/panel        -> PanelPage
+ *  - #/cluster      -> ClusterPage
+ *  - #/cpc          -> CpcPage
+ *  - #/cp           -> CpDashboard
+ *  - #/cp           -> CoCUDashboard
+ *  - #/cp-editor    -> CpEditor
+ *  - #/cocu-editor  -> CoCUEditor
  */
 function Router() {
   // ✅ Jadikan hash reactive (tanpa ini, URL berubah tapi page tak bertukar)
@@ -45,6 +47,7 @@ function Router() {
   // ⚠️ Susunan ini betul: cp-editor mesti di atas cp (supaya tak kena match "#/cp")
   if (hash.startsWith("#/cp-editor")) return <CpEditor />;
   if (hash.startsWith("#/cp")) return <CpDashboard />;
+  if (hash.startsWith("#/cp-editor")) return <CoCUEditor />;
   if (hash.startsWith("#/cp")) return <CoCUDashboard />;
 
   /**
