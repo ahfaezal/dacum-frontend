@@ -22,45 +22,7 @@ export default function PanelPage() {
   const [panelName, setPanelName] = useState("");
   const [activity, setActivity] = useState("");
   const [sending, setSending] = useState(false);
-  const [items, setItems] = useState([]);
-  const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
-
-  async function loadItems(sidRaw) {
-    const sid = sanitizeSessionId(sidRaw);
-    if (!sid) {
-      setItems([]);
-      return;
-    }
-    setBusy(true);
-    try {
-  const r = await fetch(
-    `${apiBase}/api/liveboard/${encodeURIComponent(sid)}`
-  );
-  const j = await r.json();
-  if (!r.ok || !j?.ok) throw new Error(j?.error || "Gagal load data");
-
-  setItems(Array.isArray(j?.data?.cards) ? j.data.cards : []);
-    } catch (e) {
-      // biar senyap supaya UI tak ganggu panel
-      console.error(e);
-      setItems([]);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  useEffect(() => {
-    const sid = sanitizeSessionId(sessionId);
-    if (!sid) {
-      setItems([]);
-      return;
-    }
-    const t = setTimeout(() => {
-      loadItems(sid).catch(() => {});
-    }, 300);
-    return () => clearTimeout(t);
-  }, [sessionId]);
 
   async function submitOne() {
     setMsg("");
@@ -92,7 +54,6 @@ export default function PanelPage() {
 
       setActivity("");
       setMsg(`✅ Berjaya dihantar oleh ${pn}.`);
-      await loadItems(sid);
     } catch (e) {
       setMsg(`❌ ${String(e?.message || e)}`);
     } finally {
@@ -202,35 +163,9 @@ export default function PanelPage() {
           </div>
         ) : null}
 
-        <div style={{ marginTop: 14 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <b>Rekod dihantar (S3)</b>
-            {busy ? (
-              <span style={{ fontSize: 12, color: "#666" }}>loading...</span>
-            ) : null}
-          </div>
-
-          {items.length === 0 ? (
-            <div style={{ marginTop: 8, fontSize: 12, color: "#666" }}>
-              Tiada rekod.
-            </div>
-          ) : (
-            <ol style={{ marginTop: 8, paddingLeft: 18 }}>
-              {items
-                .slice()
-                .reverse()
-                .map((it) => (
-                  <li key={it.id} style={{ marginBottom: 10 }}>
-                    <div>
-                      <b>{it.panelName}</b>: {it.text}
-                    </div>
-                    <div style={{ fontSize: 12, color: "#666" }}>
-                      {it.createdAt}
-                    </div>
-                  </li>
-                ))}
-            </ol>
-          )}
+        {/* Trademark */}
+        <div style={{ marginTop: 14, textAlign: "center", opacity: 0.7, fontSize: 12 }}>
+          PFH Digital.ai 2026
         </div>
 
         <div style={{ marginTop: 10, fontSize: 12, color: "#666" }}>
