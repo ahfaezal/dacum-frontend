@@ -6,6 +6,7 @@ import LiveBoard from "./LiveBoard.jsx";
 import PanelPage from "./PanelPage.jsx";
 import ClusterPage from "./ClusterPage.jsx";
 import CpcPage from "./CpcPage.jsx";
+import WIMPage from "./WIMPage";
 
 // FASA 3 (CP)
 import CpDashboard from "./pages/CpDashboard.jsx";
@@ -14,8 +15,8 @@ import CoCUDashboard from "./pages/CoCUDashboard.jsx";
 import CoCUEditor from "./pages/CoCUEditor.jsx";
 
 /**
- * Router ringkas guna hash (#)
- * Elak react-router untuk deploy Vercel yang laju & stabil
+ * r ringkas guna hash (#)
+ * Elak react-r untuk deploy Vercel yang laju & stabil
  *
  * Routing:
  *  - #/board      -   > LiveBoard
@@ -27,7 +28,7 @@ import CoCUEditor from "./pages/CoCUEditor.jsx";
  *  - #/cp-editor    -> CpEditor
  *  - #/cocu-editor  -> CoCUEditor
  */
-function Router() {
+function r() {
   // ✅ Jadikan hash reactive (tanpa ini, URL berubah tapi page tak bertukar)
   const [hash, setHash] = useState(window.location.hash || "");
 
@@ -42,6 +43,7 @@ function Router() {
   if (hash.startsWith("#/panel")) return <PanelPage />;
   if (hash.startsWith("#/cluster")) return <ClusterPage />;
   if (hash.startsWith("#/cpc")) return <CpcPage />;
+  if (hash.startsWith("#/wim")) return <WIMPage />;
 
   // FASA 3: CP
   if (hash.startsWith("#/cp-editor")) return <CpEditor />;
@@ -64,6 +66,6 @@ function Router() {
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
-    <Router />
+    <r />
   </React.StrictMode>
 );
