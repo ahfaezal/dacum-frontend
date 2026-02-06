@@ -15,21 +15,22 @@ import CoCUDashboard from "./pages/CoCUDashboard.jsx";
 import CoCUEditor from "./pages/CoCUEditor.jsx";
 
 /**
- * r ringkas guna hash (#)
- * Elak react-r untuk deploy Vercel yang laju & stabil
+ * Router ringkas guna hash (#)
+ * Elak react-router untuk deploy Vercel yang laju & stabil
  *
  * Routing:
- *  - #/board      -   > LiveBoard
- *  - #/panel        -> PanelPage
- *  - #/cluster      -> ClusterPage
- *  - #/cpc          -> CpcPage
- *  - #/cp           -> CpDashboard
- *  - #/cp           -> CoCUDashboard
- *  - #/cp-editor    -> CpEditor
- *  - #/cocu-editor  -> CoCUEditor
+ *  - #/board           -> LiveBoard
+ *  - #/panel           -> PanelPage
+ *  - #/cluster         -> ClusterPage
+ *  - #/cpc             -> CpcPage
+ *  - #/wim             -> WIMPage
+ *  - #/cp              -> CpDashboard
+ *  - #/cp-editor       -> CpEditor
+ *  - #/cocu-dashboard  -> CoCUDashboard
+ *  - #/cocu-editor     -> CoCUEditor
  */
-function r() {
-  // ✅ Jadikan hash reactive (tanpa ini, URL berubah tapi page tak bertukar)
+function Router() {
+  // ✅ Jadikan hash reactive
   const [hash, setHash] = useState(window.location.hash || "");
 
   useEffect(() => {
@@ -56,7 +57,7 @@ function r() {
   /**
    * DEFAULT:
    * Jika ada ?session=xxx → terus buka CPC
-   * Jika tiada → App (landing / menu)
+   * Jika tiada → App (Home / Landing)
    */
   const params = new URLSearchParams(window.location.search);
   if (params.get("session")) return <CpcPage />;
@@ -66,6 +67,6 @@ function r() {
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
-    <r />
+    <Router />
   </React.StrictMode>
 );
